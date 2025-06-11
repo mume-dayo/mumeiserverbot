@@ -63,12 +63,8 @@ def is_allowed_server(guild_id):
 async def on_ready():
     print(f'{bot.user} has connected to Discord!')
 
-    # Load join/leave configuration
-    load_join_leave_config()
     # Load translation configuration
     load_translation_config()
-    # Load server translation configuration
-    load_server_translation_config()
     try:
         synced = await bot.tree.sync()
         print(f'Synced {len(synced)} command(s)')
