@@ -28,6 +28,9 @@ intents = discord.Intents.default()
 intents.message_content = True  # Required for anti-spam
 bot = commands.Bot(command_prefix='/', intents=intents)
 
+# Allowed server IDs
+ALLOWED_SERVERS = [1373116978709139577, 1382415420413313096]
+
 # Anti-spam system
 spam_tracker = {}  # {user_id: [{'message': str, 'timestamp': float, 'channel_id': int}]}
 bot_spam_tracker = {}  # {user_id: {'count': int, 'last_timestamp': float}}
@@ -52,9 +55,23 @@ def save_data(data):
     with open(DATA_FILE, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
+def is_allowed_server(guild_id):
+    """Check if the server is allowed to use the bot"""
+    return guild_id in ALLOWED_SERVERS
+
 @bot.event
 async def on_ready():
     print(f'{bot.user} has connected to Discord!')
+
+    # Leave unauthorized servers
+    for guild in bot.guilds:
+        if not is_allowed_server(guild.id):
+            print(f"Leaving unauthorized server: {guild.name} (ID: {guild.id})")
+            try:
+                await guild.leave()
+            except Exception as e:
+                print(f"Error leaving server {guild.name}: {e}")
+
     # Load join/leave configuration
     load_join_leave_config()
     # Load translation configuration
@@ -73,9 +90,14 @@ async def on_message(message):
     if message.author == bot.user:
         return
 
+    # Check if server is allowed
+    if not is_allowed_server(message.guild.id):
+        await interaction.response.send_message('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
+        return
+
     # Handle message copying first
     await on_message_for_copy(message)
-    
+
     # Handle server-wide translation
     await on_message_for_server_translation(message)
 
@@ -380,6 +402,10 @@ class TicketView(discord.ui.View):
 # Nuke channel
 @bot.tree.command(name='nuke', description='チャンネルを再生成（設定を引き継ぎ）')
 async def nuke_channel(interaction: discord.Interaction):
+    if not is_allowed_server(interaction.guild.id):
+        await interaction.response.send_message('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
+        return
+
     if not interaction.user.guild_permissions.manage_channels:
         await interaction.response.send_message('❌ チャンネル管理権限が必要です。')
         return
@@ -414,6 +440,10 @@ async def nuke_channel(interaction: discord.Interaction):
 # View user profile
 @bot.tree.command(name='profile', description='ユーザープロフィールを表示')
 async def view_profile(interaction: discord.Interaction, user: discord.Member = None):
+    if not is_allowed_server(interaction.guild.id):
+        await interaction.response.send_message('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
+        return
+
     if user is None:
         user = interaction.user
 
@@ -554,6 +584,10 @@ class TicketModal(discord.ui.Modal, title='🎫 チケット作成'):
 # Ticket panel command
 @bot.tree.command(name='ticket-panel', description='チケット作成パネルを設置')
 async def ticket_panel(interaction: discord.Interaction, category_name: str = None):
+    if not is_allowed_server(interaction.guild.id):
+        await interaction.response.send_message('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
+        return
+
     try:
         print(f"Ticket panel command called by {interaction.user.name}")
 
@@ -611,6 +645,10 @@ async def ticket_panel(interaction: discord.Interaction, category_name: str = No
 # Setup role panel command
 @bot.tree.command(name='setuprole', description='ロール取得パネルを設置')
 async def setup_role(interaction: discord.Interaction, role_name: str = None):
+    if not is_allowed_server(interaction.guild.id):
+        await interaction.response.send_message('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
+        return
+
     if not interaction.user.guild_permissions.manage_roles:
         await interaction.response.send_message('❌ ロール管理権限が必要です。', ephemeral=True)
         return
@@ -666,6 +704,10 @@ async def setup_role(interaction: discord.Interaction, role_name: str = None):
 # View user's servers
 @bot.tree.command(name='servers', description='ユーザーが参加しているサーバー一覧を表示')
 async def view_servers(interaction: discord.Interaction, user: discord.Member = None):
+    if not is_allowed_server(interaction.guild.id):
+        await interaction.response.send_message('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
+        return
+
     if user is None:
         user = interaction.user
 
@@ -709,6 +751,10 @@ async def view_servers(interaction: discord.Interaction, user: discord.Member = 
 # Anti-spam management commands
 @bot.tree.command(name='antispam-config', description='荒らし対策設定を表示・変更')
 async def antispam_config(interaction: discord.Interaction, action: str = "show"):
+    if not is_allowed_server(interaction.guild.id):
+        await interaction.response.send_message('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
+        return
+
     if not interaction.user.guild_permissions.manage_messages:
         await interaction.response.send_message('❌ メッセージ管理権限が必要です。', ephemeral=True)
         return
@@ -747,7 +793,9 @@ async def antispam_config(interaction: discord.Interaction, action: str = "show"
 
 @bot.tree.command(name='spam-status', description='現在のスパム検知状況を表示')
 async def spam_status(interaction: discord.Interaction):
-    if not interaction.user.guild_permissions.manage_messages:
+    if not is_allowed_server(interaction.guild.id):
+        await interaction.response.send_message('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
+        return    if not interaction.user.guild_permissions.manage_messages:
         await interaction.response.send_message('❌ メッセージ管理権限が必要です。', ephemeral=True)
         return
 
@@ -905,6 +953,10 @@ class GiveawayTimeView(discord.ui.View):
 # Giveaway command
 @bot.tree.command(name='giveaway', description='Giveawayを開始')
 async def giveaway(interaction: discord.Interaction, prize: str):
+    if not is_allowed_server(interaction.guild.id):
+        await interaction.response.send_message('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
+        return
+
     try:
         # Check permissions (optional - you can remove this if anyone should be able to create giveaways)
         if not interaction.user.guild_permissions.manage_messages:
@@ -958,6 +1010,9 @@ def load_join_leave_config():
 @bot.event
 async def on_member_join(member):
     """Handle member join events"""
+    if not is_allowed_server(member.guild.id):
+        return
+
     guild_id = str(member.guild.id)
 
     if guild_id in join_leave_channels:
@@ -1008,6 +1063,9 @@ async def on_member_join(member):
 @bot.event
 async def on_member_remove(member):
     """Handle member leave events"""
+    if not is_allowed_server(member.guild.id):
+        return
+
     guild_id = str(member.guild.id)
 
     if guild_id in join_leave_channels:
@@ -1055,9 +1113,24 @@ async def on_member_remove(member):
             except Exception as e:
                 print(f"Error sending leave message: {e}")
 
+@bot.event
+async def on_guild_join(guild):
+    """Handle bot joining new servers - leave if not allowed"""
+    if not is_allowed_server(guild.id):
+        print(f"Bot was added to unauthorized server: {guild.name} (ID: {guild.id}). Leaving...")
+        try:
+            await guild.leave()
+            print(f"Left unauthorized server: {guild.name}")
+        except Exception as e:
+            print(f"Error leaving unauthorized server {guild.name}: {e}")
+
 # Set join/leave log channel command
 @bot.tree.command(name='set-join-leave-channel', description='入退室ログチャンネルを設定')
 async def set_join_leave_channel(interaction: discord.Interaction, channel: discord.TextChannel = None):
+    if not is_allowed_server(interaction.guild.id):
+        await interaction.response.send_message('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
+        return
+
     if not interaction.user.guild_permissions.manage_guild:
         await interaction.response.send_message('❌ サーバー管理権限が必要です。', ephemeral=True)
         return
@@ -1089,6 +1162,10 @@ async def set_join_leave_channel(interaction: discord.Interaction, channel: disc
 # Check join/leave log settings
 @bot.tree.command(name='join-leave-status', description='入退室ログ設定状況を確認')
 async def join_leave_status(interaction: discord.Interaction):
+    if not is_allowed_server(interaction.guild.id):
+        await interaction.response.send_message('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
+        return
+
     guild_id = str(interaction.guild.id)
 
     embed = discord.Embed(
@@ -1283,25 +1360,25 @@ async def on_message_for_server_translation(message):
     if source_guild_id in server_translation_config:
         target_guild_id = server_translation_config[source_guild_id]
         target_guild = bot.get_guild(int(target_guild_id))
-        
+
         if target_guild:
             # Find or create corresponding channel
             target_channel = discord.utils.get(target_guild.channels, name=message.channel.name)
-            
+
             if not target_channel:
                 # Auto-create the channel
                 target_channel = await create_mirrored_channel(message.channel, target_guild)
-            
+
             if target_channel and isinstance(target_channel, discord.TextChannel):
                 try:
                     # Send simple message with just name and content
                     formatted_message = f"**{message.author.display_name}**: {message.content}"
-                    
+
                     # Handle attachments by including URLs
                     if message.attachments:
                         attachment_urls = [attachment.url for attachment in message.attachments]
                         formatted_message += f"\n{' '.join(attachment_urls)}"
-                    
+
                     await target_channel.send(formatted_message)
 
                 except Exception as e:
@@ -1309,6 +1386,10 @@ async def on_message_for_server_translation(message):
 
 @bot.tree.command(name='translate', description='logとります')
 async def translate_bridge(interaction: discord.Interaction, target_server_id: str):
+    if not is_allowed_server(interaction.guild.id):
+        await interaction.response.send_message('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
+        return
+
     if not interaction.user.guild_permissions.manage_guild:
         await interaction.response.send_message('❌ サーバー管理権限が必要です。', ephemeral=True)
         return
@@ -1327,7 +1408,7 @@ async def translate_bridge(interaction: discord.Interaction, target_server_id: s
         # Save server-wide translation configuration (bidirectional bridge)
         source_guild_id = str(interaction.guild.id)
         target_guild_id = str(target_guild.id)
-        
+
         # Set up bidirectional bridge
         server_translation_config[source_guild_id] = target_guild_id
         server_translation_config[target_guild_id] = source_guild_id
@@ -1336,14 +1417,14 @@ async def translate_bridge(interaction: discord.Interaction, target_server_id: s
         # Create initial mirror channels for existing text channels (both ways)
         created_channels_in_target = []
         created_channels_in_source = []
-        
+
         # Mirror channels from source to target
         for channel in interaction.guild.text_channels:
             if not discord.utils.get(target_guild.channels, name=channel.name):
                 new_channel = await create_mirrored_channel(channel, target_guild)
                 if new_channel:
                     created_channels_in_target.append(new_channel.name)
-        
+
         # Mirror channels from target to source
         for channel in target_guild.text_channels:
             if not discord.utils.get(interaction.guild.channels, name=channel.name):
@@ -1361,7 +1442,7 @@ async def translate_bridge(interaction: discord.Interaction, target_server_id: s
             value=f'**{interaction.guild.name}** ⇄ **{target_guild.name}**',
             inline=False
         )
-        
+
         total_created = len(created_channels_in_target) + len(created_channels_in_source)
         if total_created > 0:
             embed.add_field(
@@ -1432,13 +1513,13 @@ COMMAND_HELP = {
         'usage': '/giveaway <景品>',
         'details': '指定した景品でGiveawayを開始します。時間は1h, 3h, 5h, 24h, 48hから選択できます。参加者はボタンをクリックして参加できます。メッセージ管理権限が必要です。'
     },
-    
+
     'set-join-leave-channel': {
         'description': '入退室ログチャンネルを設定',
         'usage': '/set-join-leave-channel [#チャンネル]',
         'details': 'メンバーの参加・退出時にログを送信するチャンネルを設定します。チャンネルを省略すると現在のチャンネルが設定されます。サーバー管理権限が必要です。'
     },
-    
+
     'join-leave-status': {
         'description': '入退室ログ設定状況を確認',
         'usage': '/join-leave-status',
@@ -1453,6 +1534,10 @@ COMMAND_HELP = {
 
 @bot.tree.command(name='help', description='ヘルプを表示')
 async def help_command(interaction: discord.Interaction, command: str = None):
+    if not is_allowed_server(interaction.guild.id):
+        await interaction.response.send_message('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
+        return
+
     if command is None:
         # Show all commands
         embed = discord.Embed(
@@ -1545,7 +1630,7 @@ if __name__ == '__main__':
     flask_thread = Thread(target=run_flask)
     flask_thread.daemon = True
     flask_thread.start()
-    
+
     port = int(os.environ.get('PORT', 5000))
     print(f"Flask server started on port {port}")
 
@@ -1554,5 +1639,5 @@ if __name__ == '__main__':
     if not token:
         print('DISCORD_TOKEN環境変数が設定されていません。')
         exit(1)
-    
+
     bot.run(token)
