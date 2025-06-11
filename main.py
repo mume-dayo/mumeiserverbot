@@ -67,8 +67,9 @@ async def on_ready():
     activity = discord.Game(name="むめー専用botをプレイ中...")
     await bot.change_presence(status=discord.Status.online, activity=activity)
 
-    # Load translation configuration
+    # Load configurations
     load_translation_config()
+    load_server_log_config()
     try:
         synced = await bot.tree.sync()
         print(f'Synced {len(synced)} command(s)')
@@ -91,6 +92,9 @@ async def on_message(message):
 
     # Handle server-wide translation
     await on_message_for_server_translation(message)
+
+    # Handle server logging
+    await on_message_for_server_logging(message)
 
     # Don't process commands here
     if message.content.startswith('/'):
@@ -973,6 +977,107 @@ async def close_ticket_command(interaction: discord.Interaction, ticket_id: int)
     )
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
+# Server logging commands
+@bot.tree.command(name='setup-server-log', description='サーバー間ログ転送を設定')
+async def setup_server_log(interaction: discord.Interaction, target_server_id: str):
+    if not is_allowed_server(interaction.guild.id):
+        await interaction.response.send_message('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
+        return
+
+    if not interaction.user.guild_permissions.manage_guild:
+        await interaction.response.send_message('❌ サーバー管理権限が必要です。', ephemeral=True)
+        return
+
+    try:
+        target_guild_id = int(target_server_id)
+        target_guild = bot.get_guild(target_guild_id)
+        
+        if not target_guild:
+            await interaction.response.send_message('❌ 指定されたサーバーが見つかりません。Botがそのサーバーに参加していることを確認してください。', ephemeral=True)
+            return
+        
+        # Check if bot has permissions in target server
+        if not target_guild.me.guild_permissions.manage_channels:
+            await interaction.response.send_message('❌ 転送先サーバーでチャンネル管理権限が必要です。', ephemeral=True)
+            return
+
+        source_guild_id = str(interaction.guild.id)
+        
+        # Update configuration
+        server_log_configs[source_guild_id] = target_server_id
+        save_server_log_config()
+
+        embed = discord.Embed(
+            title='✅ サーバーログ設定完了',
+            description=f'**送信元:** {interaction.guild.name}\n**転送先:** {target_guild.name}\n\nこのサーバーのすべてのメッセージが転送先サーバーにログとして送信されます。',
+            color=0x00ff00
+        )
+        embed.add_field(
+            name='📋 機能詳細',
+            value='• ユーザーメッセージを自動転送\n• チャンネルが存在しない場合は自動作成\n• 添付ファイル情報も含む\n• Botメッセージは除外',
+            inline=False
+        )
+        embed.set_footer(text='設定を解除するには管理者にお問い合わせください')
+
+        await interaction.response.send_message(embed=embed)
+
+    except ValueError:
+        await interaction.response.send_message('❌ 無効なサーバーIDです。数字のみを入力してください。', ephemeral=True)
+    except Exception as e:
+        await interaction.response.send_message(f'❌ エラーが発生しました: {str(e)}', ephemeral=True)
+
+@bot.tree.command(name='server-log-status', description='サーバーログ設定状況を確認')
+async def server_log_status(interaction: discord.Interaction):
+    if not is_allowed_server(interaction.guild.id):
+        await interaction.response.send_message('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
+        return
+
+    source_guild_id = str(interaction.guild.id)
+    
+    embed = discord.Embed(
+        title='📊 サーバーログ設定状況',
+        color=0x0099ff
+    )
+
+    if source_guild_id in server_log_configs:
+        target_server_id = server_log_configs[source_guild_id]
+        target_guild = bot.get_guild(int(target_server_id))
+        target_name = target_guild.name if target_guild else f"不明なサーバー (ID: {target_server_id})"
+        
+        embed.add_field(
+            name='🟢 ログ転送設定',
+            value=f'**状態:** 有効\n**転送先:** {target_name}\n**サーバーID:** {target_server_id}',
+            inline=False
+        )
+        embed.add_field(
+            name='📋 転送内容',
+            value='• ユーザーメッセージ\n• 添付ファイル情報\n• メッセージ時刻\n• 送信者情報',
+            inline=False
+        )
+    else:
+        embed.add_field(
+            name='🔴 ログ転送設定',
+            value='**状態:** 無効\n設定するには `/setup-server-log <サーバーID>` を使用してください。',
+            inline=False
+        )
+
+    # Show reverse logging (if this server is a target)
+    reverse_configs = []
+    for source_id, target_id in server_log_configs.items():
+        if target_id == source_guild_id:
+            source_guild = bot.get_guild(int(source_id))
+            source_name = source_guild.name if source_guild else f"不明なサーバー (ID: {source_id})"
+            reverse_configs.append(source_name)
+
+    if reverse_configs:
+        embed.add_field(
+            name='📥 受信ログ',
+            value=f'以下のサーバーからログを受信中:\n• ' + '\n• '.join(reverse_configs),
+            inline=False
+        )
+
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
 
 
 # Help system
@@ -1034,6 +1139,16 @@ COMMAND_HELP = {
         'description': 'logとります',
         'usage': '/translate <送信先サーバーID>',
         'details': '2つのサーバー間に双方向のメッセージブリッジを設定します。両サーバーの全チャンネルが自動的に同期され、メッセージが双方向で転送されます。存在しないチャンネルは自動作成されます。サーバー管理権限が必要です。'
+    },
+    'setup-server-log': {
+        'description': 'サーバー間ログ転送を設定',
+        'usage': '/setup-server-log <転送先サーバーID>',
+        'details': '現在のサーバーから指定したサーバーにすべてのメッセージをログとして転送します。対応するチャンネルが存在しない場合は自動作成されます。サーバー管理権限が必要です。'
+    },
+    'server-log-status': {
+        'description': 'サーバーログ設定状況を確認',
+        'usage': '/server-log-status',
+        'details': '現在のサーバーログ転送設定を確認します。'
     },
     'ticket-panel': {
         'description': 'チケット作成パネルを設置',
@@ -1105,6 +1220,101 @@ def run_bot():
 
     print("Starting Discord bot...")
     bot.run(token)
+
+# Server message logging system
+server_log_configs = {}  # {source_server_id: target_server_id}
+
+def save_server_log_config():
+    """Save server log configuration"""
+    try:
+        with open('server_log_config.json', 'w', encoding='utf-8') as f:
+            json.dump(server_log_configs, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"Error saving server log config: {e}")
+
+def load_server_log_config():
+    """Load server log configuration"""
+    global server_log_configs
+    try:
+        if os.path.exists('server_log_config.json'):
+            with open('server_log_config.json', 'r', encoding='utf-8') as f:
+                server_log_configs = json.load(f)
+    except Exception as e:
+        print(f"Error loading server log config: {e}")
+        server_log_configs = {}
+
+async def on_message_for_server_logging(message):
+    """Handle server-to-server message logging"""
+    if message.author.bot:
+        return
+    
+    source_guild_id = str(message.guild.id)
+    
+    # Check if this server has logging configured
+    if source_guild_id not in server_log_configs:
+        return
+    
+    target_guild_id = server_log_configs[source_guild_id]
+    target_guild = bot.get_guild(int(target_guild_id))
+    
+    if not target_guild:
+        print(f"Target guild {target_guild_id} not found")
+        return
+    
+    # Find or create corresponding channel in target server
+    source_channel_name = message.channel.name
+    target_channel = discord.utils.get(target_guild.text_channels, name=source_channel_name)
+    
+    if not target_channel:
+        try:
+            # Create channel if it doesn't exist
+            category = None
+            if message.channel.category:
+                category = discord.utils.get(target_guild.categories, name=message.channel.category.name)
+                if not category:
+                    category = await target_guild.create_category(message.channel.category.name)
+            
+            target_channel = await target_guild.create_text_channel(
+                name=source_channel_name,
+                category=category,
+                topic=f"Log from {message.guild.name}#{source_channel_name}"
+            )
+            print(f"Created channel #{source_channel_name} in {target_guild.name}")
+        except Exception as e:
+            print(f"Failed to create channel: {e}")
+            return
+    
+    # Prepare log message
+    embed = discord.Embed(
+        description=message.content,
+        color=0x00ff99,
+        timestamp=message.created_at
+    )
+    embed.set_author(
+        name=f"{message.author.display_name} ({message.author.name})",
+        icon_url=message.author.avatar.url if message.author.avatar else None
+    )
+    embed.set_footer(text=f"From: {message.guild.name} #{message.channel.name}")
+    
+    # Handle attachments
+    files = []
+    if message.attachments:
+        attachment_info = []
+        for attachment in message.attachments:
+            attachment_info.append(f"[{attachment.filename}]({attachment.url})")
+        
+        if attachment_info:
+            embed.add_field(
+                name="📎 添付ファイル",
+                value="\n".join(attachment_info),
+                inline=False
+            )
+    
+    try:
+        await target_channel.send(embed=embed)
+        print(f"Logged message from {message.guild.name} to {target_guild.name}")
+    except Exception as e:
+        print(f"Failed to send log message: {e}")
 
 # channel auto creation
 channel_configs = {} # {server_id: {channel_name: {"type": "text" or "voice", "category": category_name}}
