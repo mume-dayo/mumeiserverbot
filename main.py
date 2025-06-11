@@ -48,7 +48,9 @@ def load_data():
             return json.load(f)
     return {
         'users': {},
-        'tickets': {}
+        'tickets': {},
+        'polls': {},
+        'user_levels': {}
     }
 
 def save_data(data):
@@ -188,6 +190,10 @@ async def on_message(message):
                 print(f"Failed to moderate {message.author.name} - insufficient permissions: {e}")
             except Exception as e:
                 print(f"Error in anti-spam: {e}")
+
+    # Add experience for messages (exclude bots and commands)
+    if not message.author.bot and not message.content.startswith('/'):
+        add_experience(message.author.id, message.guild.id, 5)  # 5 XP per message
 
     # Process commands
     await bot.process_commands(message)
@@ -782,6 +788,320 @@ async def giveaway(interaction: discord.Interaction, prize: str):
         except:
             pass
 
+# Level and Experience System
+def add_experience(user_id, guild_id, amount):
+    """Add experience to user and check for level up"""
+    data = load_data()
+    if 'user_levels' not in data:
+        data['user_levels'] = {}
+    
+    guild_key = str(guild_id)
+    user_key = str(user_id)
+    
+    if guild_key not in data['user_levels']:
+        data['user_levels'][guild_key] = {}
+    
+    if user_key not in data['user_levels'][guild_key]:
+        data['user_levels'][guild_key][user_key] = {'level': 1, 'xp': 0, 'total_xp': 0}
+    
+    user_data = data['user_levels'][guild_key][user_key]
+    user_data['xp'] += amount
+    user_data['total_xp'] += amount
+    
+    # Calculate level (100 XP per level)
+    new_level = (user_data['total_xp'] // 100) + 1
+    
+    if new_level > user_data['level']:
+        user_data['level'] = new_level
+        user_data['xp'] = user_data['total_xp'] % 100
+        save_data(data)
+        return new_level  # Return new level for level up message
+    
+    save_data(data)
+    return None
+
+def get_user_level_data(user_id, guild_id):
+    """Get user level data"""
+    data = load_data()
+    if 'user_levels' not in data:
+        return {'level': 1, 'xp': 0, 'total_xp': 0}
+    
+    guild_key = str(guild_id)
+    user_key = str(user_id)
+    
+    if guild_key not in data['user_levels'] or user_key not in data['user_levels'][guild_key]:
+        return {'level': 1, 'xp': 0, 'total_xp': 0}
+    
+    return data['user_levels'][guild_key][user_key]
+
+@bot.tree.command(name='level', description='ユーザーのレベルを表示')
+async def level_command(interaction: discord.Interaction, user: discord.Member = None):
+    if not is_allowed_server(interaction.guild.id):
+        await interaction.response.send_message('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
+        return
+
+    target_user = user or interaction.user
+    level_data = get_user_level_data(target_user.id, interaction.guild.id)
+    
+    # Calculate XP needed for next level
+    current_level = level_data['level']
+    xp_needed = 100 - level_data['xp']
+    
+    embed = discord.Embed(
+        title=f'📊 {target_user.display_name} のレベル',
+        color=0x00ff99
+    )
+    embed.add_field(name='🎯 レベル', value=f"{current_level}", inline=True)
+    embed.add_field(name='⭐ 経験値', value=f"{level_data['xp']}/100 XP", inline=True)
+    embed.add_field(name='📈 総経験値', value=f"{level_data['total_xp']} XP", inline=True)
+    embed.add_field(name='🚀 次のレベルまで', value=f"{xp_needed} XP", inline=False)
+    
+    # Progress bar
+    progress = level_data['xp'] / 100
+    bar_length = 20
+    filled_length = int(bar_length * progress)
+    bar = '█' * filled_length + '░' * (bar_length - filled_length)
+    embed.add_field(name='📊 進行度', value=f"`{bar}` {level_data['xp']}%", inline=False)
+    
+    embed.set_thumbnail(url=target_user.avatar.url if target_user.avatar else None)
+    embed.set_footer(text='メッセージを送信して経験値を獲得しよう！')
+    
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name='ranking', description='サーバーのレベルランキングを表示')
+async def ranking_command(interaction: discord.Interaction):
+    if not is_allowed_server(interaction.guild.id):
+        await interaction.response.send_message('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
+        return
+
+    data = load_data()
+    if 'user_levels' not in data or str(interaction.guild.id) not in data['user_levels']:
+        await interaction.response.send_message('❌ まだレベルデータがありません。', ephemeral=True)
+        return
+    
+    guild_data = data['user_levels'][str(interaction.guild.id)]
+    
+    # Sort users by total XP
+    sorted_users = sorted(guild_data.items(), key=lambda x: x[1]['total_xp'], reverse=True)
+    
+    embed = discord.Embed(
+        title=f'🏆 {interaction.guild.name} レベルランキング',
+        description='サーバー内の上位ユーザー',
+        color=0xffd700
+    )
+    
+    for i, (user_id, level_data) in enumerate(sorted_users[:10]):  # Top 10
+        user = interaction.guild.get_member(int(user_id))
+        if user:
+            rank_emoji = ['🥇', '🥈', '🥉'][i] if i < 3 else f"{i+1}."
+            embed.add_field(
+                name=f'{rank_emoji} {user.display_name}',
+                value=f'レベル: {level_data["level"]} | 総XP: {level_data["total_xp"]}',
+                inline=False
+            )
+    
+    embed.set_footer(text='メッセージを送信してランキングを上げよう！')
+    await interaction.response.send_message(embed=embed)
+
+# Voting System
+active_polls = {}  # {message_id: poll_data}
+
+class PollView(discord.ui.View):
+    def __init__(self, poll_id, options):
+        super().__init__(timeout=None)
+        self.poll_id = poll_id
+        self.options = options
+        self.setup_buttons()
+
+    def setup_buttons(self):
+        emojis = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟']
+        for i, option in enumerate(self.options[:10]):  # Max 10 options
+            button = discord.ui.Button(
+                label=f"{option[:80]}",  # Truncate if too long
+                style=discord.ButtonStyle.primary,
+                emoji=emojis[i],
+                custom_id=f"poll_{self.poll_id}_{i}"
+            )
+            button.callback = self.create_vote_callback(i)
+            self.add_item(button)
+
+    def create_vote_callback(self, option_index):
+        async def vote_callback(interaction):
+            data = load_data()
+            if 'polls' not in data:
+                data['polls'] = {}
+            
+            if self.poll_id not in data['polls']:
+                await interaction.response.send_message('❌ この投票は見つかりません。', ephemeral=True)
+                return
+            
+            poll_data = data['polls'][self.poll_id]
+            user_id = str(interaction.user.id)
+            
+            # Check if user already voted
+            if user_id in poll_data['voters']:
+                old_option = poll_data['voters'][user_id]
+                poll_data['votes'][old_option] -= 1
+            
+            # Record new vote
+            poll_data['voters'][user_id] = option_index
+            poll_data['votes'][option_index] += 1
+            
+            save_data(data)
+            
+            # Update embed
+            embed = discord.Embed(
+                title=f'📊 {poll_data["question"]}',
+                description='下のボタンをクリックして投票してください。',
+                color=0x0099ff
+            )
+            
+            total_votes = sum(poll_data['votes'])
+            for i, option in enumerate(poll_data['options']):
+                votes = poll_data['votes'][i]
+                percentage = (votes / total_votes * 100) if total_votes > 0 else 0
+                bar_length = 20
+                filled_length = int(bar_length * percentage / 100)
+                bar = '█' * filled_length + '░' * (bar_length - filled_length)
+                
+                embed.add_field(
+                    name=f'{["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"][i]} {option}',
+                    value=f'`{bar}` {votes} 票 ({percentage:.1f}%)',
+                    inline=False
+                )
+            
+            embed.set_footer(text=f'総投票数: {total_votes}票 | 作成者: {poll_data["creator"]}')
+            
+            try:
+                await interaction.response.edit_message(embed=embed, view=self)
+                
+                # Add XP for voting
+                add_experience(interaction.user.id, interaction.guild.id, 10)
+                
+            except:
+                await interaction.response.send_message(f'✅ **{self.options[option_index]}** に投票しました！', ephemeral=True)
+        
+        return vote_callback
+
+@bot.tree.command(name='poll', description='投票を作成')
+async def poll_command(interaction: discord.Interaction, question: str, options: str):
+    try:
+        await interaction.response.defer()
+        
+        if not is_allowed_server(interaction.guild.id):
+            await interaction.followup.send('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
+            return
+
+        # Parse options (comma separated)
+        option_list = [opt.strip() for opt in options.split(',')]
+        
+        if len(option_list) < 2:
+            await interaction.followup.send('❌ 最低2つの選択肢が必要です。', ephemeral=True)
+            return
+        
+        if len(option_list) > 10:
+            await interaction.followup.send('❌ 選択肢は最大10個までです。', ephemeral=True)
+            return
+
+        # Create poll embed
+        embed = discord.Embed(
+            title=f'📊 {question}',
+            description='下のボタンをクリックして投票してください。',
+            color=0x0099ff
+        )
+        
+        for i, option in enumerate(option_list):
+            embed.add_field(
+                name=f'{["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"][i]} {option}',
+                value='`░░░░░░░░░░░░░░░░░░░░` 0 票 (0.0%)',
+                inline=False
+            )
+        
+        embed.set_footer(text=f'総投票数: 0票 | 作成者: {interaction.user.display_name}')
+        
+        # Create poll view
+        view = PollView("temp", option_list)
+        
+        # Send poll
+        await interaction.followup.send(embed=embed, view=view)
+        
+        # Get message and update poll data
+        message = await interaction.original_response()
+        poll_id = str(message.id)
+        
+        # Update view with correct poll ID
+        view.poll_id = poll_id
+        await message.edit(view=view)
+        
+        # Save poll data
+        data = load_data()
+        if 'polls' not in data:
+            data['polls'] = {}
+            
+        data['polls'][poll_id] = {
+            'question': question,
+            'options': option_list,
+            'votes': [0] * len(option_list),
+            'voters': {},  # {user_id: option_index}
+            'creator': interaction.user.display_name,
+            'channel_id': interaction.channel.id,
+            'guild_id': interaction.guild.id
+        }
+        save_data(data)
+        
+        # Add XP for creating poll
+        add_experience(interaction.user.id, interaction.guild.id, 20)
+
+    except Exception as e:
+        print(f"Error in poll command: {e}")
+        try:
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f'❌ エラーが発生しました: {str(e)}', ephemeral=True)
+            else:
+                await interaction.followup.send(f'❌ エラーが発生しました: {str(e)}', ephemeral=True)
+        except:
+            pass
+
+@bot.tree.command(name='poll-results', description='投票結果を表示')
+async def poll_results_command(interaction: discord.Interaction, poll_id: str):
+    if not is_allowed_server(interaction.guild.id):
+        await interaction.response.send_message('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
+        return
+
+    data = load_data()
+    if 'polls' not in data or poll_id not in data['polls']:
+        await interaction.response.send_message('❌ 指定された投票が見つかりません。', ephemeral=True)
+        return
+    
+    poll_data = data['polls'][poll_id]
+    
+    embed = discord.Embed(
+        title=f'📊 投票結果: {poll_data["question"]}',
+        color=0x00ff00
+    )
+    
+    total_votes = sum(poll_data['votes'])
+    winner_index = poll_data['votes'].index(max(poll_data['votes'])) if total_votes > 0 else 0
+    
+    for i, option in enumerate(poll_data['options']):
+        votes = poll_data['votes'][i]
+        percentage = (votes / total_votes * 100) if total_votes > 0 else 0
+        status = '🏆 ' if i == winner_index and total_votes > 0 else ''
+        
+        embed.add_field(
+            name=f'{status}{option}',
+            value=f'{votes} 票 ({percentage:.1f}%)',
+            inline=True
+        )
+    
+    embed.add_field(
+        name='📈 統計',
+        value=f'**総投票数:** {total_votes}\n**投票者数:** {len(poll_data["voters"])}\n**作成者:** {poll_data["creator"]}',
+        inline=False
+    )
+    
+    await interaction.response.send_message(embed=embed)
+
 # Ticket system commands
 class TicketCloseView(discord.ui.View):
     def __init__(self, ticket_id):
@@ -1255,6 +1575,26 @@ COMMAND_HELP = {
         'description': 'チケットを強制的に閉じる',
         'usage': '/close-ticket <チケットID>',
         'details': '指定されたチケットを強制的に閉じます。管理者権限が必要です。'
+    },
+    'poll': {
+        'description': '投票を作成',
+        'usage': '/poll <質問> <選択肢1,選択肢2,選択肢3...>',
+        'details': '投票を作成します。選択肢はカンマで区切って入力してください。最大10個まで設定可能です。投票作成で20XP、投票参加で10XPを獲得できます。'
+    },
+    'poll-results': {
+        'description': '投票結果を表示',
+        'usage': '/poll-results <投票ID>',
+        'details': '指定された投票の詳細な結果を表示します。投票IDはメッセージIDです。'
+    },
+    'level': {
+        'description': 'ユーザーのレベルを表示',
+        'usage': '/level [ユーザー]',
+        'details': '指定したユーザー（省略時は自分）のレベル、経験値、進行度を表示します。メッセージ送信で5XP獲得できます。'
+    },
+    'ranking': {
+        'description': 'サーバーのレベルランキングを表示',
+        'usage': '/ranking',
+        'details': 'サーバー内のユーザーのレベルランキングを表示します。上位10名まで表示されます。'
     }
 }
 
@@ -1333,6 +1673,16 @@ def load_server_log_config():
     except Exception as e:
         print(f"Error loading server log config: {e}")
         server_log_configs = {}
+
+async def on_message_for_copy(message):
+    """Handle message copying functionality"""
+    # This function can be implemented later for message copying features
+    pass
+
+async def on_message_for_server_translation(message):
+    """Handle server translation functionality"""
+    # This function can be implemented later for translation features
+    pass
 
 async def on_message_for_server_logging(message):
     """Handle server-to-server message logging"""
