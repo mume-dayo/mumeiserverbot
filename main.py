@@ -510,31 +510,31 @@ class TicketModal(discord.ui.Modal, title='🎫 チケット作成'):
                 await interaction.response.send_message('❌ サーバー情報の取得に失敗しました。', ephemeral=True)
                 return
 
-        # Use custom category if specified, otherwise default
-        if self.category_name:
-            category = discord.utils.get(guild.categories, name=self.category_name)
-            if not category:
-                category = await guild.create_category(self.category_name)
-        else:
-            category = discord.utils.get(guild.categories, name="🎫 チケット")
-            if not category:
-                category = await guild.create_category("🎫 チケット")
+            # Use custom category if specified, otherwise default
+            if self.category_name:
+                category = discord.utils.get(guild.categories, name=self.category_name)
+                if not category:
+                    category = await guild.create_category(self.category_name)
+            else:
+                category = discord.utils.get(guild.categories, name="🎫 チケット")
+                if not category:
+                    category = await guild.create_category("🎫 チケット")
 
         # Set permissions for the ticket channel
-        overwrites = {
-            guild.default_role: discord.PermissionOverwrite(read_messages=False),
-            interaction.user: discord.PermissionOverwrite(read_messages=True, send_messages=True),
-            guild.owner: discord.PermissionOverwrite(read_messages=True, send_messages=True)
-        }
+            overwrites = {
+                guild.default_role: discord.PermissionOverwrite(read_messages=False),
+                interaction.user: discord.PermissionOverwrite(read_messages=True, send_messages=True),
+                guild.owner: discord.PermissionOverwrite(read_messages=True, send_messages=True)
+            }
 
-        # Add permissions for users with Administrator permission
-        for member in guild.members:
-            if member.guild_permissions.administrator:
-                overwrites[member] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
+            # Add permissions for users with Administrator permission
+            for member in guild.members:
+                if member.guild_permissions.administrator:
+                    overwrites[member] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
 
-        # Create the ticket channel
-        channel_name = f"ticket-{ticket_id}-{interaction.user.name}"
-        try:
+            # Create the ticket channel
+            channel_name = f"ticket-{ticket_id}-{interaction.user.name}"
+            
             # Ensure we have proper permissions
             if not guild.me.guild_permissions.manage_channels:
                 await interaction.response.send_message('❌ チャンネル作成権限がありません。', ephemeral=True)
