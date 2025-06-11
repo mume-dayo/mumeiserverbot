@@ -783,6 +783,58 @@ async def giveaway(interaction: discord.Interaction, prize: str):
             pass
 
 # Ticket system commands
+class TicketCloseView(discord.ui.View):
+    def __init__(self, ticket_id):
+        super().__init__(timeout=None)
+        self.ticket_id = ticket_id
+
+    @discord.ui.button(label='🔒 チケットを閉じる', style=discord.ButtonStyle.danger, emoji='🔒')
+    async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+        data = load_data()
+        tickets = data.get('tickets', {})
+        
+        if str(self.ticket_id) not in tickets:
+            await interaction.response.send_message('❌ チケットが見つかりません。', ephemeral=True)
+            return
+        
+        ticket_data = tickets[str(self.ticket_id)]
+        
+        # Check if user is ticket creator or admin
+        is_creator = str(interaction.user.id) == ticket_data['user_id']
+        is_admin = interaction.user.guild_permissions.administrator
+        
+        if not is_creator and not is_admin:
+            await interaction.response.send_message('❌ チケットを閉じる権限がありません。', ephemeral=True)
+            return
+        
+        if ticket_data['status'] == 'closed':
+            await interaction.response.send_message('❌ このチケットは既に閉じられています。', ephemeral=True)
+            return
+        
+        # Update ticket status
+        data['tickets'][str(self.ticket_id)]['status'] = 'closed'
+        data['tickets'][str(self.ticket_id)]['closed_at'] = datetime.now().isoformat()
+        data['tickets'][str(self.ticket_id)]['closed_by'] = str(interaction.user.id)
+        save_data(data)
+        
+        # Send closure message
+        embed = discord.Embed(
+            title='🔒 チケットクローズ',
+            description=f'チケット #{self.ticket_id} が閉じられました。\n\n**閉じたユーザー:** {interaction.user.mention}\n**閉じた時刻:** <t:{int(datetime.now().timestamp())}:F>',
+            color=0xff0000
+        )
+        embed.set_footer(text='このチャンネルは5秒後に削除されます')
+        
+        await interaction.response.send_message(embed=embed)
+        
+        # Delete channel after 5 seconds
+        import asyncio
+        await asyncio.sleep(5)
+        try:
+            await interaction.channel.delete()
+        except:
+            pass
+
 class TicketPanelView(discord.ui.View):
     def __init__(self, category_name=None):
         super().__init__(timeout=None)
@@ -842,9 +894,16 @@ class TicketPanelView(discord.ui.View):
                 value=interaction.user.mention,
                 inline=False
             )
+            embed.add_field(
+                name='📋 利用方法',
+                value='• 問題や質問を詳しく説明してください\n• サポートスタッフが対応します\n• 解決したら下のボタンでチケットを閉じてください',
+                inline=False
+            )
             embed.set_footer(text='サポートスタッフが対応します')
 
-            message = await channel.send(embed=embed)
+            # Create close button view
+            close_view = TicketCloseView(ticket_id)
+            message = await channel.send(embed=embed, view=close_view)
             await message.pin()
             await channel.send(f"{interaction.user.mention} へのメンション", delete_after=1)
 
