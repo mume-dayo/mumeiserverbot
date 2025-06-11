@@ -759,484 +759,226 @@ async def giveaway(interaction: discord.Interaction, prize: str):
         except:
             await interaction.followup.send(f'❌ エラーが発生しました: {str(e)}', ephemeral=True)
 
+# Ticket system commands
+class TicketPanelView(discord.ui.View):
+    def __init__(self, category_name=None):
+        super().__init__(timeout=None)
+        self.category_name = category_name
 
+    @discord.ui.button(label='🎫 チケット作成', style=discord.ButtonStyle.primary, emoji='🎫')
+    async def create_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+        modal = TicketModal(self.category_name)
+        await interaction.response.send_modal(modal)
 
-
-
-# Join/Leave logging system
-join_leave_channels = {}  # {guild_id: channel_id}
-
-def save_join_leave_config():
-    """Save join/leave channel configuration"""
-    try:
-        with open('join_leave_config.json', 'w', encoding='utf-8') as f:
-            json.dump(join_leave_channels, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        print(f"Error saving join/leave config: {e}")
-
-def load_join_leave_config():
-    """Load join/leave channel configuration"""
-    global join_leave_channels
-    try:
-        if os.path.exists('join_leave_config.json'):
-            with open('join_leave_config.json', 'r', encoding='utf-8') as f:
-                join_leave_channels = json.load(f)
-    except Exception as e:
-        print(f"Error loading join/leave config: {e}")
-        join_leave_channels = {}
-
-@bot.event
-async def on_member_join(member):
-    """Handle member join events"""
-    if not is_allowed_server(member.guild.id):
-        return
-
-    guild_id = str(member.guild.id)
-
-    if guild_id in join_leave_channels:
-        channel_id = join_leave_channels[guild_id]
-        channel = bot.get_channel(int(channel_id))
-
-        if channel:
-            # Create join embed
-            embed = discord.Embed(
-                title="JOIN一入室ログ",
-                description=f"{member.display_name} がサーバーに参加しました！",
-                color=0x00ff00,
-                timestamp=datetime.now()
-            )
-
-            # Add user information
-            embed.add_field(
-                name="ユーザー:",
-                value=f"{member.mention}\n({member.id})",
-                inline=False
-            )
-
-            # Add server information
-            embed.add_field(
-                name="サーバー:",
-                value=f"{member.guild.name}\n({member.guild.id})",
-                inline=False
-            )
-
-            # Add member count
-            embed.add_field(
-                name="現在の人数:",
-                value=f"{member.guild.member_count}人",
-                inline=False
-            )
-
-            # Set user avatar as thumbnail
-            if member.avatar:
-                embed.set_thumbnail(url=member.avatar.url)
-
-            embed.set_footer(text=datetime.now().strftime('%Y/%m/%d %H:%M'))
-
-            try:
-                await channel.send(embed=embed)
-            except Exception as e:
-                print(f"Error sending join message: {e}")
-
-@bot.event
-async def on_member_remove(member):
-    """Handle member leave events"""
-    if not is_allowed_server(member.guild.id):
-        return
-
-    guild_id = str(member.guild.id)
-
-    if guild_id in join_leave_channels:
-        channel_id = join_leave_channels[guild_id]
-        channel = bot.get_channel(int(channel_id))
-
-        if channel:
-            # Create leave embed
-            embed = discord.Embed(
-                title="LEAVE一退室ログ",
-                description=f"{member.display_name} がサーバーから退出しました。",
-                color=0xff0000,
-                timestamp=datetime.now()
-            )
-
-            # Add user information
-            embed.add_field(
-                name="ユーザー:",
-                value=f"{member.mention}\n({member.id})",
-                inline=False
-            )
-
-            # Add server information
-            embed.add_field(
-                name="サーバー:",
-                value=f"{member.guild.name}\n({member.guild.id})",
-                inline=False
-            )
-
-            # Add member count
-            embed.add_field(
-                name="現在の人数:",
-                value=f"{member.guild.member_count}人",
-                inline=False
-            )
-
-            # Set user avatar as thumbnail
-            if member.avatar:
-                embed.set_thumbnail(url=member.avatar.url)
-
-            embed.set_footer(text=datetime.now().strftime('%Y/%m/%d %H:%M'))
-
-            try:
-                await channel.send(embed=embed)
-            except Exception as e:
-                print(f"Error sending leave message: {e}")
-
-@bot.event
-async def on_guild_join(guild):
-    """Handle bot joining new servers"""
-    print(f"Bot was added to server: {guild.name} (ID: {guild.id})")
-
-# Set join/leave log channel command
-@bot.tree.command(name='set-join-leave-channel', description='入退室ログチャンネルを設定')
-async def set_join_leave_channel(interaction: discord.Interaction, channel: discord.TextChannel = None):
+@bot.tree.command(name='ticket-panel', description='チケット作成パネルを設置')
+async def ticket_panel(interaction: discord.Interaction, category_name: str = None):
     if not is_allowed_server(interaction.guild.id):
         await interaction.response.send_message('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
         return
 
-    if not interaction.user.guild_permissions.manage_guild:
-        await interaction.response.send_message('❌ サーバー管理権限が必要です。', ephemeral=True)
+    if not interaction.user.guild_permissions.manage_channels:
+        await interaction.response.send_message('❌ チャンネル管理権限が必要です。', ephemeral=True)
         return
 
-    guild_id = str(interaction.guild.id)
-
-    if channel is None:
-        channel = interaction.channel
-
-    # Save channel configuration
-    join_leave_channels[guild_id] = str(channel.id)
-    save_join_leave_config()
-
     embed = discord.Embed(
-        title='✅ 入退室ログ設定完了',
-        description=f'入退室ログを {channel.mention} に送信するように設定しました。',
-        color=0x00ff00
+        title='🎫 サポートチケット',
+        description='サポートが必要な場合は、下のボタンをクリックしてチケットを作成してください。\n\n'
+                   '**チケットについて:**\n'
+                   '• 質問や問題がある時にご利用ください\n'
+                   '• 専用チャンネルが作成されます\n'
+                   '• サポートスタッフが対応します\n'
+                   '• 問題が解決したらチケットを閉じてください',
+        color=0xff9900
     )
     embed.add_field(
-        name='設定内容',
-        value='• メンバーの参加・退出時に自動でログが送信されます\n• ユーザー情報、サーバー情報、現在の人数が表示されます',
+        name='📋 利用方法',
+        value='1. 「🎫 チケット作成」ボタンをクリック\n2. 内容を入力して送信\n3. 作成されたチャンネルで対応を待つ',
         inline=False
     )
+    embed.set_footer(text='24時間サポート | お気軽にお声がけください')
 
-    await interaction.response.send_message(embed=embed)
+    view = TicketPanelView(category_name)
+    await interaction.response.send_message(embed=embed, view=view)
 
-
-
-# Check join/leave log settings
-@bot.tree.command(name='join-leave-status', description='入退室ログ設定状況を確認')
-async def join_leave_status(interaction: discord.Interaction):
+@bot.tree.command(name='ticket-list', description='チケット一覧を表示')
+async def ticket_list(interaction: discord.Interaction, status: str = "all"):
     if not is_allowed_server(interaction.guild.id):
         await interaction.response.send_message('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
         return
 
-    guild_id = str(interaction.guild.id)
+    if not interaction.user.guild_permissions.manage_messages:
+        await interaction.response.send_message('❌ メッセージ管理権限が必要です。', ephemeral=True)
+        return
+
+    data = load_data()
+    tickets = data.get('tickets', {})
+
+    # Filter tickets by guild and status
+    guild_tickets = []
+    for ticket_id, ticket_data in tickets.items():
+        if ticket_data['guild_id'] == str(interaction.guild.id):
+            if status == "all" or ticket_data['status'] == status:
+                guild_tickets.append((ticket_id, ticket_data))
+
+    if not guild_tickets:
+        await interaction.response.send_message('❌ 該当するチケットが見つかりません。', ephemeral=True)
+        return
 
     embed = discord.Embed(
-        title='📊 入退室ログ設定状況',
+        title=f'🎫 チケット一覧 ({status})',
+        description=f'サーバー内のチケット: {len(guild_tickets)}件',
         color=0x0099ff
     )
 
-    if guild_id in join_leave_channels:
-        channel_id = join_leave_channels[guild_id]
-        channel = bot.get_channel(int(channel_id))
+    for ticket_id, ticket_data in guild_tickets[:10]:  # Show max 10 tickets
+        user = interaction.guild.get_member(int(ticket_data['user_id']))
+        user_name = user.display_name if user else 'ユーザーが見つかりません'
 
-        if channel:
-            embed.add_field(
-                name='✅ 設定済み',
-                value=f'ログチャンネル: {channel.mention}',
-                inline=False
-            )
-            embed.color = 0x00ff00
-        else:
-            embed.add_field(
-                name='⚠️ 設定エラー',
-                value='設定されたチャンネルが見つかりません',
-                inline=False
-            )
-            embed.color = 0xff9900
-    else:
+        status_emoji = '🟢' if ticket_data['status'] == 'open' else '🔴'
         embed.add_field(
-            name='❌ 未設定',
-            value='入退室ログチャンネルが設定されていません',
-            inline=False
+            name=f'{status_emoji} チケット #{ticket_id}',
+            value=f'**作成者:** {user_name}\n**作成日:** {ticket_data["created_at"][:10]}\n**内容:** {ticket_data["description"][:50]}...',
+            inline=True
         )
-        embed.color = 0xff0000
 
-    embed.add_field(
-        name='設定方法',
-        value='`/set-join-leave-channel [#チャンネル]` で設定できます',
-        inline=False
-    )
+    if len(guild_tickets) > 10:
+        embed.set_footer(text=f'表示: 10/{len(guild_tickets)}件')
 
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
-# Message copy/translate system
-message_copy_config = {}  # {guild_id: {'source_channel': channel_id, 'target_guild': guild_id, 'target_channel': channel_id}}
-
-def save_copy_config():
-    """Save message copy configuration"""
-    try:
-        with open('message_copy_config.json', 'w', encoding='utf-8') as f:
-            json.dump(message_copy_config, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        print(f"Error saving copy config: {e}")
-
-def load_copy_config():
-    """Load message copy configuration"""
-    global message_copy_config
-    try:
-        if os.path.exists('message_copy_config.json'):
-            with open('message_copy_config.json', 'r', encoding='utf-8') as f:
-                message_copy_config = json.load(f)
-    except Exception as e:
-        print(f"Error loading copy config: {e}")
-        message_copy_config = {}
-
-@bot.event
-async def on_message_for_copy(message):
-    """Handle message copying to other servers"""
-    if message.author.bot:
-        return
-
-    guild_id = str(message.guild.id)
-    if guild_id in message_copy_config:
-        config = message_copy_config[guild_id]
-
-        # Check if message is from configured source channel
-        if str(message.channel.id) == config.get('source_channel'):
-            target_guild_id = config.get('target_guild')
-            target_channel_id = config.get('target_channel')
-
-            if target_guild_id and target_channel_id:
-                target_guild = bot.get_guild(int(target_guild_id))
-                if target_guild:
-                    target_channel = target_guild.get_channel(int(target_channel_id))
-                    if target_channel:
-                        try:
-                            # Create embed for copied message
-                            embed = discord.Embed(
-                                description=message.content,
-                                color=0x00ff99,
-                                timestamp=message.created_at
-                            )
-                            embed.set_author(
-                                name=f"{message.author.display_name} ({message.author.name})",
-                                icon_url=message.author.avatar.url if message.author.avatar else None
-                            )
-                            embed.add_field(
-                                name="元サーバー",
-                                value=f"{message.guild.name} #{message.channel.name}",
-                                inline=False
-                            )
-
-                            # Handle attachments
-                            if message.attachments:
-                                for attachment in message.attachments:
-                                    if attachment.content_type and attachment.content_type.startswith('image/'):
-                                        embed.set_image(url=attachment.url)
-                                        break
-
-                                if len(message.attachments) > 1:
-                                    embed.add_field(
-                                        name="添付ファイル",
-                                        value=f"{len(message.attachments)}個のファイルが添付されています",
-                                        inline=False
-                                    )
-
-                            await target_channel.send(embed=embed)
-
-                        except Exception as e:
-                            print(f"Error copying message: {e}")
-
-# Modify the existing on_message event to include message copying
-@bot.event
-async def on_message_old(message):
-    # This is the old on_message function - we'll rename it and call it from the new one
-    pass
-
-# Server-wide translation configuration
-server_translation_config = {}  # {source_guild_id: target_guild_id}
-
-def save_server_translation_config():
-    """Save server translation configuration"""
-    try:
-        with open('server_translation_config.json', 'w', encoding='utf-8') as f:
-            json.dump(server_translation_config, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        print(f"Error saving server translation config: {e}")
-
-def load_server_translation_config():
-    """Load server translation configuration"""
-    global server_translation_config
-    try:
-        if os.path.exists('server_translation_config.json'):
-            with open('server_translation_config.json', 'r', encoding='utf-8') as f:
-                server_translation_config = json.load(f)
-    except Exception as e:
-        print(f"Error loading server translation config: {e}")
-        server_translation_config = {}
-
-async def create_mirrored_channel(source_channel, target_guild):
-    """Create a mirrored channel in target guild"""
-    try:
-        # Check if channel already exists
-        existing_channel = discord.utils.get(target_guild.channels, name=source_channel.name)
-        if existing_channel:
-            return existing_channel
-
-        # Create category if source channel has one
-        target_category = None
-        if source_channel.category:
-            target_category = discord.utils.get(target_guild.categories, name=source_channel.category.name)
-            if not target_category:
-                target_category = await target_guild.create_category(source_channel.category.name)
-
-        # Create the channel based on type
-        if isinstance(source_channel, discord.TextChannel):
-            new_channel = await target_guild.create_text_channel(
-                name=source_channel.name,
-                topic=source_channel.topic,
-                category=target_category
-            )
-        elif isinstance(source_channel, discord.VoiceChannel):
-            new_channel = await target_guild.create_voice_channel(
-                name=source_channel.name,
-                category=target_category
-            )
-        else:
-            return None
-
-        print(f"Created mirrored channel: {new_channel.name} in {target_guild.name}")
-        return new_channel
-
-    except Exception as e:
-        print(f"Error creating mirrored channel: {e}")
-        return None
-
-@bot.event
-async def on_message_for_server_translation(message):
-    """Handle server-wide message translation"""
-    if message.author.bot:
-        return
-
-    source_guild_id = str(message.guild.id)
-    if source_guild_id in server_translation_config:
-        target_guild_id = server_translation_config[source_guild_id]
-        target_guild = bot.get_guild(int(target_guild_id))
-
-        if target_guild:
-            # Find or create corresponding channel
-            target_channel = discord.utils.get(target_guild.channels, name=message.channel.name)
-
-            if not target_channel:
-                # Auto-create the channel
-                target_channel = await create_mirrored_channel(message.channel, target_guild)
-
-            if target_channel and isinstance(target_channel, discord.TextChannel):
-                try:
-                    # Send simple message with just name and content
-                    formatted_message = f"**{message.author.display_name}**: {message.content}"
-
-                    # Handle attachments by including URLs
-                    if message.attachments:
-                        attachment_urls = [attachment.url for attachment in message.attachments]
-                        formatted_message += f"\n{' '.join(attachment_urls)}"
-
-                    await target_channel.send(formatted_message)
-
-                except Exception as e:
-                    print(f"Error sending translated message: {e}")
-
-@bot.tree.command(name='translate', description='logとります')
-async def translate_bridge(interaction: discord.Interaction, target_server_id: str):
+@bot.tree.command(name='close-ticket', description='チケットを強制的に閉じる')
+async def close_ticket_command(interaction: discord.Interaction, ticket_id: int):
     if not is_allowed_server(interaction.guild.id):
         await interaction.response.send_message('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
         return
 
-    if not interaction.user.guild_permissions.manage_guild:
-        await interaction.response.send_message('❌ サーバー管理権限が必要です。', ephemeral=True)
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message('❌ 管理者権限が必要です。', ephemeral=True)
         return
 
-    try:
-        target_guild = bot.get_guild(int(target_server_id))
-        if not target_guild:
-            await interaction.response.send_message('❌ 指定されたサーバーにBotがアクセスできません。', ephemeral=True)
-            return
+    data = load_data()
+    tickets = data.get('tickets', {})
 
-        # Check if bot has necessary permissions in target guild
-        if not target_guild.me.guild_permissions.manage_channels:
-            await interaction.response.send_message('❌ 送信先サーバーでチャンネル管理権限がありません。', ephemeral=True)
-            return
+    if str(ticket_id) not in tickets:
+        await interaction.response.send_message('❌ 指定されたチケットが見つかりません。', ephemeral=True)
+        return
 
-        # Save server-wide translation configuration (bidirectional bridge)
-        source_guild_id = str(interaction.guild.id)
-        target_guild_id = str(target_guild.id)
+    ticket_data = tickets[str(ticket_id)]
 
-        # Set up bidirectional bridge
-        server_translation_config[source_guild_id] = target_guild_id
-        server_translation_config[target_guild_id] = source_guild_id
-        save_server_translation_config()
+    if ticket_data['guild_id'] != str(interaction.guild.id):
+        await interaction.response.send_message('❌ このサーバーのチケットではありません。', ephemeral=True)
+        return
 
-        # Create initial mirror channels for existing text channels (both ways)
-        created_channels_in_target = []
-        created_channels_in_source = []
+    if ticket_data['status'] == 'closed':
+        await interaction.response.send_message('❌ このチケットは既に閉じられています。', ephemeral=True)
+        return
 
-        # Mirror channels from source to target
-        for channel in interaction.guild.text_channels:
-            if not discord.utils.get(target_guild.channels, name=channel.name):
-                new_channel = await create_mirrored_channel(channel, target_guild)
-                if new_channel:
-                    created_channels_in_target.append(new_channel.name)
+    # Update ticket status
+    data['tickets'][str(ticket_id)]['status'] = 'closed'
+    data['tickets'][str(ticket_id)]['closed_at'] = datetime.now().isoformat()
+    data['tickets'][str(ticket_id)]['closed_by'] = str(interaction.user.id)
+    save_data(data)
 
-        # Mirror channels from target to source
-        for channel in target_guild.text_channels:
-            if not discord.utils.get(interaction.guild.channels, name=channel.name):
-                new_channel = await create_mirrored_channel(channel, interaction.guild)
-                if new_channel:
-                    created_channels_in_source.append(new_channel.name)
+    # Try to find and delete the channel
+    channel_id = ticket_data.get('channel_id')
+    if channel_id:
+        channel = interaction.guild.get_channel(int(channel_id))
+        if channel:
+            try:
+                await channel.delete()
+            except:
+                pass
 
-        embed = discord.Embed(
-            title='🌉 bridge',
-            description=f'サーバー間ブリッジが設定されました。',
-            color=0x00ff00
-        )
-        embed.add_field(
-            name='接続サーバー',
-            value=f'**{interaction.guild.name}** ⇄ **{target_guild.name}**',
-            inline=False
-        )
+    embed = discord.Embed(
+        title='✅ チケット強制クローズ',
+        description=f'チケット #{ticket_id} を強制的に閉じました。',
+        color=0x00ff00
+    )
+    await interaction.response.send_message(embed=embed, ephemeral=True)
 
-        total_created = len(created_channels_in_target) + len(created_channels_in_source)
-        if total_created > 0:
-            embed.add_field(
-                name='作成されたチャンネル',
-                value=f'合計 {total_created}個のチャンネルを作成しました',
-                inline=False
+# Ticket modal for creating tickets
+class TicketModal(discord.ui.Modal, title='🎫 チケット作成'):
+    def __init__(self, category_name=None):
+        super().__init__()
+        self.category_name = category_name
+        self.short_description = discord.ui.TextInput(label="簡単な説明", placeholder="例: サーバーが落ちている", required=True)
+        self.detailed_problem = discord.ui.TextInput(label="詳細な問題", style=discord.TextStyle.paragraph, placeholder="詳しく教えてください", required=True)
+        self.add_item(self.short_description)
+        self.add_item(self.detailed_problem)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        data = load_data()
+        user_id = str(interaction.user.id)
+        guild_id = str(interaction.guild.id)
+
+        # Create new ticket ID
+        ticket_id = 1
+        while str(ticket_id) in data.get('tickets', {}):
+            ticket_id += 1
+
+        # Get ticket description
+        description = f"**概要:** {self.short_description.value}\n\n**詳細:** {self.detailed_problem.value}"
+
+        # Create new channel
+        try:
+            # Check if category exists, create if necessary
+            if self.category_name:
+                category = discord.utils.get(interaction.guild.categories, name=self.category_name)
+                if not category:
+                    category = await interaction.guild.create_category(self.category_name)
+            else:
+                category = None
+
+            # Create the channel
+            channel = await interaction.guild.create_text_channel(
+                name=f'ticket-{ticket_id}',
+                topic=f'チケット #{ticket_id} | 作成者: {interaction.user.display_name}',
+                category=category
             )
 
-        embed.add_field(
-            name='📋 動作',
-            value='• 両サーバーの全チャンネルが双方向でブリッジされます\n'
-                  '• 新しいチャンネルは自動的に作成されます\n'
-                  '• メッセージは双方向で同期されます',
-            inline=False
-        )
+            # Set channel permissions
+            await channel.set_permissions(interaction.user, read_messages=True, send_messages=True)
+            await channel.set_permissions(interaction.guild.default_role, read_messages=False)
+            await channel.set_permissions(interaction.guild.me, read_messages=True, send_messages=True)
 
-        await interaction.response.send_message(embed=embed)
+            # Send initial message
+            embed = discord.Embed(
+                title=f'🎫 チケット #{ticket_id}',
+                description=description,
+                color=0xff9900
+            )
+            embed.add_field(
+                name='作成者',
+                value=interaction.user.mention,
+                inline=False
+            )
+            embed.set_footer(text='サポートスタッフが対応します')
 
-    except ValueError:
-        await interaction.response.send_message('❌ 無効なサーバーIDです。', ephemeral=True)
-    except Exception as e:
-        await interaction.response.send_message(f'❌ 設定エラー: {str(e)}', ephemeral=True)
+            message = await channel.send(embed=embed)
+            await message.pin()
+            await channel.send(f"{interaction.user.mention} へのメンション", delete_after=1)
+
+            # Save ticket data
+            if 'tickets' not in data:
+                data['tickets'] = {}
+
+            data['tickets'][str(ticket_id)] = {
+                'user_id': user_id,
+                'guild_id': guild_id,
+                'channel_id': str(channel.id),
+                'created_at': datetime.now().isoformat(),
+                'description': description,
+                'status': 'open'
+            }
+            save_data(data)
+
+            # Send confirmation
+            await interaction.response.send_message(f'✅ チケット #{ticket_id} を作成しました！ {channel.mention} で詳細を確認してください。', ephemeral=True)
+
+        except discord.Forbidden:
+            await interaction.response.send_message('❌ チャンネルを作成する権限がありません。', ephemeral=True)
+        except Exception as e:
+            await interaction.response.send_message(f'❌ チケットの作成に失敗しました: {str(e)}', ephemeral=True)
 
 # Help system
 COMMAND_HELP = {
@@ -1255,7 +997,7 @@ COMMAND_HELP = {
         'usage': '/help [コマンド名]',
         'details': 'コマンド一覧を表示します。コマンド名を指定すると詳細な説明を表示します。'
     },
-    
+
     'servers': {
         'description': 'ユーザーが参加しているサーバー一覧を表示',
         'usage': '/servers [ユーザー]',
@@ -1297,6 +1039,21 @@ COMMAND_HELP = {
         'description': 'logとります',
         'usage': '/translate <送信先サーバーID>',
         'details': '2つのサーバー間に双方向のメッセージブリッジを設定します。両サーバーの全チャンネルが自動的に同期され、メッセージが双方向で転送されます。存在しないチャンネルは自動作成されます。サーバー管理権限が必要です。'
+    },
+    'ticket-panel': {
+        'description': 'チケット作成パネルを設置',
+        'usage': '/ticket-panel [カテゴリー名]',
+        'details': 'チケット作成パネルを設置します。カテゴリー名を指定すると、作成されるチケットチャンネルが特定のカテゴリーに分類されます。チャンネル管理権限が必要です。'
+    },
+    'ticket-list': {
+        'description': 'チケット一覧を表示',
+        'usage': '/ticket-list [状態]',
+        'details': 'チケットの一覧を表示します。状態を指定すると、特定の状態のチケットのみを表示します（例: open, closed）。メッセージ管理権限が必要です。'
+    },
+    'close-ticket': {
+        'description': 'チケットを強制的に閉じる',
+        'usage': '/close-ticket <チケットID>',
+        'details': '指定されたチケットを強制的に閉じます。管理者権限が必要です。'
     }
 }
 
