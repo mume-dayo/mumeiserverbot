@@ -63,6 +63,10 @@ def is_allowed_server(guild_id):
 async def on_ready():
     print(f'{bot.user} has connected to Discord!')
 
+    # Set bot status/presence
+    activity = discord.Game(name="むめー専用botをプレイ中...")
+    await bot.change_presence(status=discord.Status.online, activity=activity)
+
     # Load translation configuration
     load_translation_config()
     try:
