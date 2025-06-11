@@ -342,51 +342,7 @@ class PublicAuthView(discord.ui.View):
 
 
 
-# Ticket View with close button
-class TicketView(discord.ui.View):
-    def __init__(self, ticket_id):
-        super().__init__(timeout=None)
-        self.ticket_id = ticket_id
 
-    @discord.ui.button(label='チケットを閉じる', style=discord.ButtonStyle.danger, emoji='🔒')
-    async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
-        data = load_data()
-
-        if self.ticket_id not in data['tickets']:
-            await interaction.response.send_message('❌ チケットが見つかりません。', ephemeral=True)
-            return
-
-        ticket = data['tickets'][self.ticket_id]
-        user_id = str(interaction.user.id)
-
-        # Check if user can close the ticket (creator or admin)
-        if user_id != ticket['user_id'] and not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message('❌ このチケットを閉じる権限がありません。', ephemeral=True)
-            return
-
-        # Update ticket status
-        data['tickets'][self.ticket_id]['status'] = 'closed'
-        data['tickets'][self.ticket_id]['closed_at'] = datetime.now().isoformat()
-        data['tickets'][self.ticket_id]['closed_by'] = user_id
-        save_data(data)
-
-        # Update embed
-        embed = discord.Embed(
-            title=f'🎫 チケット #{self.ticket_id} (クローズ済み)',
-            description=f'**件名:** {ticket["subject"]}\n**説明:** {ticket.get("description", "なし")}\n**作成者:** <@{ticket["user_id"]}>',
-            color=0x808080
-        )
-        embed.add_field(name='ステータス', value='🔴 クローズ済み', inline=True)
-        embed.add_field(name='クローズ日時', value=f'<t:{int(datetime.now().timestamp())}:F>', inline=True)
-        embed.add_field(name='クローズ実行者', value=interaction.user.mention, inline=True)
-
-        # Disable button
-        button.disabled = True
-
-        await interaction.response.edit_message(embed=embed, view=self)
-
-        # Send confirmation message
-        await interaction.followup.send('🔒 チケットがクローズされました。')
 
 
 
@@ -456,200 +412,11 @@ async def view_profile(interaction: discord.Interaction, user: discord.Member = 
 
     await interaction.response.send_message(embed=embed)
 
-# Public Ticket Creation View
-class PublicTicketView(discord.ui.View):
-    def __init__(self, category_name=None):
-        super().__init__(timeout=None)
-        self.category_name = category_name
 
-    @discord.ui.button(label='🎫 チケットを作成', style=discord.ButtonStyle.primary, emoji='🎫')
-    async def create_ticket_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        try:
-            print(f"Ticket creation button clicked by {interaction.user.name}")
-            # Show modal for ticket creation
-            modal = TicketModal(self.category_name)
-            await interaction.response.send_modal(modal)
-            print("Modal sent successfully")
-        except Exception as e:
-            print(f"Error in create_ticket_button: {e}")
-            try:
-                await interaction.response.send_message(f'❌ エラーが発生しました: {str(e)}', ephemeral=True)
-            except:
-                await interaction.followup.send(f'❌ エラーが発生しました: {str(e)}', ephemeral=True)
 
-# Ticket Creation Modal
-class TicketModal(discord.ui.Modal, title='🎫 チケット作成'):
-    def __init__(self, category_name=None):
-        super().__init__()
-        self.category_name = category_name
 
-    description = discord.ui.TextInput(
-        label='内容',
-        placeholder='お困りの内容や質問を入力してください...',
-        style=discord.TextStyle.long,
-        required=True,
-        max_length=1000
-    )
 
-    async def on_submit(self, interaction: discord.Interaction):
-        try:
-            # Check if guild exists
-            if not interaction.guild:
-                await interaction.response.send_message('❌ このコマンドはサーバー内でのみ使用できます。', ephemeral=True)
-                return
 
-            data = load_data()
-            user_id = str(interaction.user.id)
-            ticket_id = str(len(data['tickets']) + 1)
-
-            # Create ticket channel
-            guild = interaction.guild
-            
-            # Additional guild validation
-            if not guild or not guild.id:
-                await interaction.response.send_message('❌ サーバー情報の取得に失敗しました。', ephemeral=True)
-                return
-
-            # Use custom category if specified, otherwise default
-            if self.category_name:
-                category = discord.utils.get(guild.categories, name=self.category_name)
-                if not category:
-                    category = await guild.create_category(self.category_name)
-            else:
-                category = discord.utils.get(guild.categories, name="🎫 チケット")
-                if not category:
-                    category = await guild.create_category("🎫 チケット")
-
-        # Set permissions for the ticket channel
-            overwrites = {
-                guild.default_role: discord.PermissionOverwrite(read_messages=False),
-                interaction.user: discord.PermissionOverwrite(read_messages=True, send_messages=True),
-                guild.owner: discord.PermissionOverwrite(read_messages=True, send_messages=True)
-            }
-
-            # Add permissions for users with Administrator permission
-            for member in guild.members:
-                if member.guild_permissions.administrator:
-                    overwrites[member] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
-
-            # Create the ticket channel
-            channel_name = f"ticket-{ticket_id}-{interaction.user.name}"
-            
-            # Ensure we have proper permissions
-            if not guild.me.guild_permissions.manage_channels:
-                await interaction.response.send_message('❌ チャンネル作成権限がありません。', ephemeral=True)
-                return
-                
-            ticket_channel = await guild.create_text_channel(
-                name=channel_name,
-                category=category,
-                overwrites=overwrites
-            )
-
-            data['tickets'][ticket_id] = {
-                'user_id': user_id,
-                'subject': 'サポートチケット',
-                'description': str(self.description.value),
-                'status': 'open',
-                'created_at': datetime.now().isoformat(),
-                'guild_id': str(interaction.guild.id),
-                'channel_id': str(ticket_channel.id)
-            }
-
-            save_data(data)
-
-            # Send initial message to ticket channel
-            embed = discord.Embed(
-                title=f'🎫 チケット #{ticket_id}',
-                description=f'**件名:** サポートチケット\n**内容:** {self.description.value}\n**作成者:** {interaction.user.mention}',
-                color=0xff9900
-            )
-            embed.add_field(name='ステータス', value='🟢 オープン', inline=True)
-            embed.add_field(name='作成日時', value=f'<t:{int(datetime.now().timestamp())}:F>', inline=True)
-
-            # Add close button
-            view = TicketView(ticket_id)
-            await ticket_channel.send(embed=embed, view=view)
-
-            # Response to user
-            await interaction.response.send_message(
-                f'✅ チケット #{ticket_id} を作成しました！\n'
-                f'専用チャンネル: {ticket_channel.mention}',
-                ephemeral=True
-            )
-
-        except discord.Forbidden:
-            await interaction.response.send_message('❌ チケットチャンネルの作成権限がありません。管理者にBotの権限を確認してもらってください。', ephemeral=True)
-        except discord.HTTPException as e:
-            await interaction.response.send_message(f'❌ チケットチャンネルの作成に失敗しました（HTTP エラー）: {str(e)}', ephemeral=True)
-        except Exception as e:
-            print(f"Unexpected error in ticket creation: {type(e).__name__}: {str(e)}")
-            await interaction.response.send_message(f'❌ 予期しないエラーが発生しました: {str(e)}', ephemeral=True)
-
-# Ticket panel command
-@bot.tree.command(name='ticket-panel', description='チケット作成パネルを設置')
-async def ticket_panel(interaction: discord.Interaction, category_name: str = None):
-    if not interaction.guild:
-        await interaction.response.send_message('❌ このコマンドはサーバー内でのみ使用できます。', ephemeral=True)
-        return
-
-    if not is_allowed_server(interaction.guild.id):
-        await interaction.response.send_message('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
-        return
-
-    try:
-        print(f"Ticket panel command called by {interaction.user.name}")
-
-        if not interaction.user.guild_permissions.manage_channels:
-            await interaction.response.send_message('❌ チャンネル管理権限が必要です。', ephemeral=True)
-            return
-
-        # Create category if specified but doesn't exist
-        category_status = ""
-        if category_name:
-            target_category = discord.utils.get(interaction.guild.categories, name=category_name)
-            if not target_category:
-                try:
-                    target_category = await interaction.guild.create_category(category_name)
-                    category_status = f"\n✅ カテゴリ `{category_name}` を作成しました。"
-                    print(f"Created new category: {category_name}")
-                except Exception as e:
-                    await interaction.response.send_message(f'❌ カテゴリ "{category_name}" の作成に失敗しました: {str(e)}', ephemeral=True)
-                    return
-
-        embed = discord.Embed(
-            title='🎫 サポートチケット',
-            description='何かお困りのことがありましたら、下のボタンをクリックしてサポートチケットを作成してください。\n\n'
-                       '**チケットについて:**\n'
-                       '• 専用のプライベートチャンネルが作成されます\n'
-                       '• あなたとサーバーの管理者のみがアクセス可能です\n'
-                       '• 問題が解決したらチケットをクローズしてください',
-            color=0x00ff99
-        )
-
-        if category_name:
-            embed.add_field(name='📁 作成先カテゴリ', value=f'`{category_name}`', inline=True)
-
-        embed.set_footer(text='24時間365日サポート対応')
-
-        view = PublicTicketView(category_name)
-
-        # Send response with category creation status if applicable
-        response_text = f"🎫 チケットパネルを設置しました！{category_status}" if category_status else None
-
-        if response_text:
-            await interaction.response.send_message(response_text, embed=embed, view=view)
-        else:
-            await interaction.response.send_message(embed=embed, view=view)
-
-        print(f"Ticket panel sent successfully with category: {category_name}")
-
-    except Exception as e:
-        print(f"Error in ticket-panel command: {e}")
-        try:
-            await interaction.response.send_message(f'❌ エラーが発生しました: {str(e)}', ephemeral=True)
-        except:
-            await interaction.followup.send(f'❌ エラーが発生しました: {str(e)}', ephemeral=True)
 
 # Setup role panel command
 @bot.tree.command(name='setuprole', description='ロール取得パネルを設置')
@@ -1488,11 +1255,7 @@ COMMAND_HELP = {
         'usage': '/help [コマンド名]',
         'details': 'コマンド一覧を表示します。コマンド名を指定すると詳細な説明を表示します。'
     },
-    'ticket-panel': {
-        'description': 'チケット作成パネルを設置',
-        'usage': '/ticket-panel [カテゴリ名]',
-        'details': '誰でもボタンをクリックしてチケットを作成できるパネルを設置します。カテゴリ名を指定すると、そのカテゴリ内にチケットが作成されます。チャンネル管理権限が必要です。'
-    },
+    
     'servers': {
         'description': 'ユーザーが参加しているサーバー一覧を表示',
         'usage': '/servers [ユーザー]',
