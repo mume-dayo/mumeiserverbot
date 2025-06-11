@@ -508,6 +508,11 @@ class TicketModal(discord.ui.Modal, title='🎫 チケット作成'):
     )
 
     async def on_submit(self, interaction: discord.Interaction):
+        # Check if guild exists
+        if not interaction.guild:
+            await interaction.response.send_message('❌ このコマンドはサーバー内でのみ使用できます。', ephemeral=True)
+            return
+
         data = load_data()
         user_id = str(interaction.user.id)
         ticket_id = str(len(data['tickets']) + 1)
@@ -584,6 +589,10 @@ class TicketModal(discord.ui.Modal, title='🎫 チケット作成'):
 # Ticket panel command
 @bot.tree.command(name='ticket-panel', description='チケット作成パネルを設置')
 async def ticket_panel(interaction: discord.Interaction, category_name: str = None):
+    if not interaction.guild:
+        await interaction.response.send_message('❌ このコマンドはサーバー内でのみ使用できます。', ephemeral=True)
+        return
+
     if not is_allowed_server(interaction.guild.id):
         await interaction.response.send_message('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
         return
@@ -612,6 +621,8 @@ async def ticket_panel(interaction: discord.Interaction, category_name: str = No
             title='🎫 サポートチケット',
             description='何かお困りのことがありましたら、下のボタンをクリックしてサポートチケットを作成してください。\n\n'
                        '**チケットについて:**\n'
+                       '• 専用のプライベートチャンネルが作成されます\n'
+                       '• あなたとサーバーの管理者のみがアクセス可能です\n'
                        '• 問題が解決したらチケットをクローズしてください',
             color=0x00ff99
         )
@@ -619,7 +630,7 @@ async def ticket_panel(interaction: discord.Interaction, category_name: str = No
         if category_name:
             embed.add_field(name='📁 作成先カテゴリ', value=f'`{category_name}`', inline=True)
 
-        embed.set_footer(text='サポートできたらします')
+        embed.set_footer(text='24時間365日サポート対応')
 
         view = PublicTicketView(category_name)
 
@@ -667,10 +678,10 @@ async def setup_role(interaction: discord.Interaction, role_name: str = None):
             return
 
         embed = discord.Embed(
-            title='ロール認証',
-            description=f'下のボタンをクリックして **{role_name}** ロールをとってね。\n\n'
+            title='🎭 ロール取得システム',
+            description=f'下のボタンをクリックして **{role_name}** ロールを取得してください。\n\n'
                        '**認証について:**\n'
-                       '• 認証により全チャンネル見れます\n'
+                       '• 認証により全機能を利用できるようになります\n'
                        '• 誰でも自由に使用できます',
             color=0x00ff99
         )
@@ -679,14 +690,14 @@ async def setup_role(interaction: discord.Interaction, role_name: str = None):
             value=f'• {role_name} ({len(role.members)} メンバー)',
             inline=False
         )
-        embed.set_footer(text='認証してね | たまに配布中')
+        embed.set_footer(text='認証は無料です | 24時間利用可能')
 
         view = SpecificRoleView(role)
         await interaction.response.send_message(embed=embed, view=view)
     else:
         # Original behavior - show all available roles
         embed = discord.Embed(
-            title='ロール取得システム',
+            title='🎭 ロール取得システム',
             description='下のボタンをクリックして認証を行い、ロールを取得してください。\n\n'
                        '**認証について:**\n'
                        '• 認証により全機能を利用できるようになります\n'
@@ -694,7 +705,7 @@ async def setup_role(interaction: discord.Interaction, role_name: str = None):
                        '• 誰でも自由に使用できます',
             color=0x00ff99
         )
-        embed.set_footer(text='認証してね | たまに配布中')
+        embed.set_footer(text='認証は無料です | 24時間利用可能')
 
         view = PublicAuthView()
         await interaction.response.send_message(embed=embed, view=view)
@@ -759,7 +770,7 @@ async def antispam_config(interaction: discord.Interaction, action: str = "show"
 
     if action == "show":
         embed = discord.Embed(
-            title="荒らし対策設定",
+            title="🛡️ 荒らし対策設定",
             description="現在の荒らし対策設定:",
             color=0x0099ff
         )
@@ -1453,9 +1464,9 @@ async def translate_bridge(interaction: discord.Interaction, target_server_id: s
 
         embed.add_field(
             name='📋 動作',
-            value='• 両サーバーの全チャンネルのログが取られます\n'
+            value='• 両サーバーの全チャンネルが双方向でブリッジされます\n'
                   '• 新しいチャンネルは自動的に作成されます\n'
-                  '• メッセージは自動で同期されます',
+                  '• メッセージは双方向で同期されます',
             inline=False
         )
 
@@ -1526,7 +1537,7 @@ COMMAND_HELP = {
         'details': '現在の入退室ログ設定状況を確認します。'
     },
     'translate': {
-        'description': 'チャンネルのlogをとります',
+        'description': 'logとります',
         'usage': '/translate <送信先サーバーID>',
         'details': '2つのサーバー間に双方向のメッセージブリッジを設定します。両サーバーの全チャンネルが自動的に同期され、メッセージが双方向で転送されます。存在しないチャンネルは自動作成されます。サーバー管理権限が必要です。'
     }
