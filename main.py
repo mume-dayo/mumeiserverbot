@@ -63,15 +63,6 @@ def is_allowed_server(guild_id):
 async def on_ready():
     print(f'{bot.user} has connected to Discord!')
 
-    # Leave unauthorized servers
-    for guild in bot.guilds:
-        if not is_allowed_server(guild.id):
-            print(f"Leaving unauthorized server: {guild.name} (ID: {guild.id})")
-            try:
-                await guild.leave()
-            except Exception as e:
-                print(f"Error leaving server {guild.name}: {e}")
-
     # Load join/leave configuration
     load_join_leave_config()
     # Load translation configuration
@@ -1126,14 +1117,8 @@ async def on_member_remove(member):
 
 @bot.event
 async def on_guild_join(guild):
-    """Handle bot joining new servers - leave if not allowed"""
-    if not is_allowed_server(guild.id):
-        print(f"Bot was added to unauthorized server: {guild.name} (ID: {guild.id}). Leaving...")
-        try:
-            await guild.leave()
-            print(f"Left unauthorized server: {guild.name}")
-        except Exception as e:
-            print(f"Error leaving unauthorized server {guild.name}: {e}")
+    """Handle bot joining new servers"""
+    print(f"Bot was added to server: {guild.name} (ID: {guild.id})")
 
 # Set join/leave log channel command
 @bot.tree.command(name='set-join-leave-channel', description='入退室ログチャンネルを設定')
