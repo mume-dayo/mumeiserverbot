@@ -795,7 +795,9 @@ async def antispam_config(interaction: discord.Interaction, action: str = "show"
 async def spam_status(interaction: discord.Interaction):
     if not is_allowed_server(interaction.guild.id):
         await interaction.response.send_message('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
-        return    if not interaction.user.guild_permissions.manage_messages:
+        return
+        
+    if not interaction.user.guild_permissions.manage_messages:
         await interaction.response.send_message('❌ メッセージ管理権限が必要です。', ephemeral=True)
         return
 
