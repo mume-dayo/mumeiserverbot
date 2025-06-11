@@ -364,7 +364,7 @@ async def nuke_channel(interaction: discord.Interaction):
         return
 
     if not interaction.user.guild_permissions.manage_channels:
-        await interaction.response.send_message('❌ チャンネル管理権限が必要です。')
+        await interaction.response.send_message('❌ チャンネル管理権限が必要です。', ephemeral=True)
         return
 
     channel = interaction.channel
@@ -374,25 +374,38 @@ async def nuke_channel(interaction: discord.Interaction):
     channel_topic = channel.topic
     channel_category = channel.category
     channel_position = channel.position
+    channel_overwrites = channel.overwrites
 
-    # Create new channel with same settings
-    new_channel = await channel.guild.create_text_channel(
-        name=channel_name,
-        topic=channel_topic,
-        category=channel_category,
-        position=channel_position
-    )
+    # Send initial response
+    await interaction.response.send_message('🔄 チャンネルを再生成しています...', ephemeral=True)
 
-    # Delete old channel
-    await channel.delete()
+    try:
+        # Create new channel with same settings first
+        new_channel = await channel.guild.create_text_channel(
+            name=f"{channel_name}-new",
+            topic=channel_topic,
+            category=channel_category,
+            overwrites=channel_overwrites
+        )
 
-    # Send confirmation in new channel
-    embed = discord.Embed(
-        title='💥 チャンネルがヌークされました！',
-        description='チャンネルが正常に再生成されました。',
-        color=0xff0000
-    )
-    await new_channel.send(embed=embed)
+        # Send confirmation in new channel
+        embed = discord.Embed(
+            title='💥 チャンネルがヌークされました！',
+            description='チャンネルが正常に再生成されました。',
+            color=0xff0000
+        )
+        await new_channel.send(embed=embed)
+
+        # Now delete the old channel
+        await channel.delete(reason="Nuke command executed")
+
+        # Rename the new channel to the original name
+        await new_channel.edit(name=channel_name, position=channel_position)
+
+    except discord.Forbidden:
+        await interaction.followup.send('❌ チャンネルの削除・作成権限が不足しています。', ephemeral=True)
+    except Exception as e:
+        await interaction.followup.send(f'❌ エラーが発生しました: {str(e)}', ephemeral=True)
 
 # View user profile
 @bot.tree.command(name='profile', description='ユーザープロフィールを表示')
