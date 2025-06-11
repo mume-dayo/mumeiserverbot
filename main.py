@@ -425,61 +425,74 @@ async def view_profile(interaction: discord.Interaction, user: discord.Member = 
 # Setup role panel command
 @bot.tree.command(name='setuprole', description='ロール取得パネルを設置')
 async def setup_role(interaction: discord.Interaction, role_name: str = None):
-    if not is_allowed_server(interaction.guild.id):
-        await interaction.response.send_message('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
-        return
-
-    if not interaction.user.guild_permissions.manage_roles:
-        await interaction.response.send_message('❌ ロール管理権限が必要です。', ephemeral=True)
-        return
-
-    # If specific role name is provided, create a panel for that specific role
-    if role_name:
-        role = discord.utils.get(interaction.guild.roles, name=role_name)
-        if not role:
-            await interaction.response.send_message(f'❌ "{role_name}" ロールが見つかりません。', ephemeral=True)
+    try:
+        # Immediately defer the response
+        await interaction.response.defer()
+        
+        if not is_allowed_server(interaction.guild.id):
+            await interaction.followup.send('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
             return
 
-        # Check if the role can be assigned
-        if (role.name == '@everyone' or 
-            role.managed or 
-            role.permissions.administrator or
-            role >= interaction.guild.me.top_role):
-            await interaction.response.send_message(f'❌ "{role_name}" ロールは付与できません。', ephemeral=True)
+        if not interaction.user.guild_permissions.manage_roles:
+            await interaction.followup.send('❌ ロール管理権限が必要です。', ephemeral=True)
             return
 
-        embed = discord.Embed(
-            title='🎭 ロール取得システム',
-            description=f'下のボタンをクリックして **{role_name}** ロールを取得してください。\n\n'
-                       '**認証について:**\n'
-                       '• 認証により全機能を利用できるようになります\n'
-                       '• 誰でも自由に使用できます',
-            color=0x00ff99
-        )
-        embed.add_field(
-            name='📋 取得可能なロール',
-            value=f'• {role_name} ({len(role.members)} メンバー)',
-            inline=False
-        )
-        embed.set_footer(text='認証は無料です | 24時間利用可能')
+        # If specific role name is provided, create a panel for that specific role
+        if role_name:
+            role = discord.utils.get(interaction.guild.roles, name=role_name)
+            if not role:
+                await interaction.followup.send(f'❌ "{role_name}" ロールが見つかりません。', ephemeral=True)
+                return
 
-        view = SpecificRoleView(role)
-        await interaction.response.send_message(embed=embed, view=view)
-    else:
-        # Original behavior - show all available roles
-        embed = discord.Embed(
-            title='🎭 ロール取得システム',
-            description='下のボタンをクリックして認証を行い、ロールを取得してください。\n\n'
-                       '**認証について:**\n'
-                       '• 認証により全機能を利用できるようになります\n'
-                       '• 利用可能なロールから選択できます\n'
-                       '• 誰でも自由に使用できます',
-            color=0x00ff99
-        )
-        embed.set_footer(text='認証は無料です | 24時間利用可能')
+            # Check if the role can be assigned
+            if (role.name == '@everyone' or 
+                role.managed or 
+                role.permissions.administrator or
+                role >= interaction.guild.me.top_role):
+                await interaction.followup.send(f'❌ "{role_name}" ロールは付与できません。', ephemeral=True)
+                return
 
-        view = PublicAuthView()
-        await interaction.response.send_message(embed=embed, view=view)
+            embed = discord.Embed(
+                title='🎭 ロール取得システム',
+                description=f'下のボタンをクリックして **{role_name}** ロールを取得してください。\n\n'
+                           '**認証について:**\n'
+                           '• 認証により全機能を利用できるようになります\n'
+                           '• 誰でも自由に使用できます',
+                color=0x00ff99
+            )
+            embed.add_field(
+                name='📋 取得可能なロール',
+                value=f'• {role_name} ({len(role.members)} メンバー)',
+                inline=False
+            )
+            embed.set_footer(text='認証は無料です | 24時間利用可能')
+
+            view = SpecificRoleView(role)
+            await interaction.followup.send(embed=embed, view=view)
+        else:
+            # Original behavior - show all available roles
+            embed = discord.Embed(
+                title='🎭 ロール取得システム',
+                description='下のボタンをクリックして認証を行い、ロールを取得してください。\n\n'
+                           '**認証について:**\n'
+                           '• 認証により全機能を利用できるようになります\n'
+                           '• 利用可能なロールから選択できます\n'
+                           '• 誰でも自由に使用できます',
+                color=0x00ff99
+            )
+            embed.set_footer(text='認証は無料です | 24時間利用可能')
+
+            view = PublicAuthView()
+            await interaction.followup.send(embed=embed, view=view)
+    except Exception as e:
+        print(f"Error in setuprole command: {e}")
+        try:
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f'❌ エラーが発生しました: {str(e)}', ephemeral=True)
+            else:
+                await interaction.followup.send(f'❌ エラーが発生しました: {str(e)}', ephemeral=True)
+        except:
+            pass
 
 # View user's servers
 @bot.tree.command(name='servers', description='ユーザーが参加しているサーバー一覧を表示')
@@ -735,14 +748,17 @@ class GiveawayTimeView(discord.ui.View):
 # Giveaway command
 @bot.tree.command(name='giveaway', description='Giveawayを開始')
 async def giveaway(interaction: discord.Interaction, prize: str):
-    if not is_allowed_server(interaction.guild.id):
-        await interaction.response.send_message('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
-        return
-
     try:
+        # Immediately defer the response
+        await interaction.response.defer()
+        
+        if not is_allowed_server(interaction.guild.id):
+            await interaction.followup.send('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
+            return
+
         # Check permissions (optional - you can remove this if anyone should be able to create giveaways)
         if not interaction.user.guild_permissions.manage_messages:
-            await interaction.response.send_message('❌ メッセージ管理権限が必要です。', ephemeral=True)
+            await interaction.followup.send('❌ メッセージ管理権限が必要です。', ephemeral=True)
             return
 
         # Create time selection embed
@@ -754,14 +770,17 @@ async def giveaway(interaction: discord.Interaction, prize: str):
         embed.set_footer(text='下のメニューから時間を選択してください')
 
         view = GiveawayTimeView(prize)
-        await interaction.response.send_message(embed=embed, view=view)
+        await interaction.followup.send(embed=embed, view=view)
 
     except Exception as e:
         print(f"Error in giveaway command: {e}")
         try:
-            await interaction.response.send_message(f'❌ エラーが発生しました: {str(e)}', ephemeral=True)
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f'❌ エラーが発生しました: {str(e)}', ephemeral=True)
+            else:
+                await interaction.followup.send(f'❌ エラーが発生しました: {str(e)}', ephemeral=True)
         except:
-            await interaction.followup.send(f'❌ エラーが発生しました: {str(e)}', ephemeral=True)
+            pass
 
 # Ticket system commands
 class TicketPanelView(discord.ui.View):
@@ -853,33 +872,46 @@ class TicketPanelView(discord.ui.View):
 
 @bot.tree.command(name='ticket-panel', description='チケット作成パネルを設置')
 async def ticket_panel(interaction: discord.Interaction, category_name: str = None):
-    if not is_allowed_server(interaction.guild.id):
-        await interaction.response.send_message('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
-        return
+    try:
+        # Immediately defer the response
+        await interaction.response.defer()
+        
+        if not is_allowed_server(interaction.guild.id):
+            await interaction.followup.send('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
+            return
 
-    if not interaction.user.guild_permissions.manage_channels:
-        await interaction.response.send_message('❌ チャンネル管理権限が必要です。', ephemeral=True)
-        return
+        if not interaction.user.guild_permissions.manage_channels:
+            await interaction.followup.send('❌ チャンネル管理権限が必要です。', ephemeral=True)
+            return
 
-    embed = discord.Embed(
-        title='🎫 サポートチケット',
-        description='サポートが必要な場合は、下のボタンをクリックしてチケットを作成してください。\n\n'
-                   '**チケットについて:**\n'
-                   '• 質問や問題がある時にご利用ください\n'
-                   '• 専用チャンネルが作成されます\n'
-                   '• サポートスタッフが対応します\n'
-                   '• 問題が解決したらチケットを閉じてください',
-        color=0xff9900
-    )
-    embed.add_field(
-        name='📋 利用方法',
-        value='1. 「🎫 チケット作成」ボタンをクリック\n2. 内容を入力して送信\n3. 作成されたチャンネルで対応を待つ',
-        inline=False
-    )
-    embed.set_footer(text='24時間サポート | お気軽にお声がけください')
+        embed = discord.Embed(
+            title='🎫 サポートチケット',
+            description='サポートが必要な場合は、下のボタンをクリックしてチケットを作成してください。\n\n'
+                       '**チケットについて:**\n'
+                       '• 質問や問題がある時にご利用ください\n'
+                       '• 専用チャンネルが作成されます\n'
+                       '• サポートスタッフが対応します\n'
+                       '• 問題が解決したらチケットを閉じてください',
+            color=0xff9900
+        )
+        embed.add_field(
+            name='📋 利用方法',
+            value='1. 「🎫 チケット作成」ボタンをクリック\n2. 内容を入力して送信\n3. 作成されたチャンネルで対応を待つ',
+            inline=False
+        )
+        embed.set_footer(text='24時間サポート | お気軽にお声がけください')
 
-    view = TicketPanelView(category_name)
-    await interaction.response.send_message(embed=embed, view=view)
+        view = TicketPanelView(category_name)
+        await interaction.followup.send(embed=embed, view=view)
+    except Exception as e:
+        print(f"Error in ticket-panel command: {e}")
+        try:
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f'❌ エラーが発生しました: {str(e)}', ephemeral=True)
+            else:
+                await interaction.followup.send(f'❌ エラーが発生しました: {str(e)}', ephemeral=True)
+        except:
+            pass
 
 @bot.tree.command(name='ticket-list', description='チケット一覧を表示')
 async def ticket_list(interaction: discord.Interaction, status: str = "all"):
