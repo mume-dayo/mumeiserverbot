@@ -763,8 +763,85 @@ class TicketPanelView(discord.ui.View):
 
     @discord.ui.button(label='🎫 チケット作成', style=discord.ButtonStyle.primary, emoji='🎫')
     async def create_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
-        modal = TicketModal(self.category_name)
-        await interaction.response.send_modal(modal)
+        await self.create_ticket_channel(interaction)
+    
+    async def create_ticket_channel(self, interaction):
+        data = load_data()
+        user_id = str(interaction.user.id)
+        guild_id = str(interaction.guild.id)
+
+        # Create new ticket ID
+        ticket_id = 1
+        while str(ticket_id) in data.get('tickets', {}):
+            ticket_id += 1
+
+        try:
+            # Check if category exists, create if necessary
+            if self.category_name:
+                category = discord.utils.get(interaction.guild.categories, name=self.category_name)
+                if not category:
+                    category = await interaction.guild.create_category(self.category_name)
+            else:
+                category = discord.utils.get(interaction.guild.categories, name="🎫 チケット")
+                if not category:
+                    category = await interaction.guild.create_category("🎫 チケット")
+
+            # Create the channel with format: name-チケット
+            channel_name = f"{interaction.user.name}-チケット"
+            channel = await interaction.guild.create_text_channel(
+                name=channel_name,
+                topic=f'チケット #{ticket_id} | 作成者: {interaction.user.display_name}',
+                category=category
+            )
+
+            # Set channel permissions
+            await channel.set_permissions(interaction.user, read_messages=True, send_messages=True)
+            await channel.set_permissions(interaction.guild.default_role, read_messages=False)
+            await channel.set_permissions(interaction.guild.me, read_messages=True, send_messages=True)
+
+            # Add permissions for administrators
+            for member in interaction.guild.members:
+                if member.guild_permissions.administrator:
+                    await channel.set_permissions(member, read_messages=True, send_messages=True)
+
+            # Send initial message
+            embed = discord.Embed(
+                title=f'🎫 チケット #{ticket_id}',
+                description=f'チケットが作成されました。\nご用件をお聞かせください。',
+                color=0xff9900
+            )
+            embed.add_field(
+                name='作成者',
+                value=interaction.user.mention,
+                inline=False
+            )
+            embed.set_footer(text='サポートスタッフが対応します')
+
+            message = await channel.send(embed=embed)
+            await message.pin()
+            await channel.send(f"{interaction.user.mention} へのメンション", delete_after=1)
+
+            # Save ticket data
+            if 'tickets' not in data:
+                data['tickets'] = {}
+
+            data['tickets'][str(ticket_id)] = {
+                'user_id': user_id,
+                'guild_id': guild_id,
+                'channel_id': str(channel.id),
+                'created_at': datetime.now().isoformat(),
+                'description': 'チケット作成',
+                'status': 'open'
+            }
+            save_data(data)
+
+            # Send confirmation
+            await interaction.response.send_message(f'✅ チケット #{ticket_id} を作成しました！ {channel.mention} で詳細を確認してください。', ephemeral=True)
+
+        except discord.Forbidden:
+            await interaction.response.send_message('❌ チャンネルを作成する権限がありません。', ephemeral=True)
+        except Exception as e:
+            await interaction.response.send_message(f'❌ チケットの作成に失敗しました: {str(e)}', ephemeral=True)
 
 @bot.tree.command(name='ticket-panel', description='チケット作成パネルを設置')
 async def ticket_panel(interaction: discord.Interaction, category_name: str = None):
@@ -892,89 +969,7 @@ async def close_ticket_command(interaction: discord.Interaction, ticket_id: int)
     )
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
-# Ticket modal for creating tickets
-class TicketModal(discord.ui.Modal, title='🎫 チケット作成'):
-    def __init__(self, category_name=None):
-        super().__init__()
-        self.category_name = category_name
-        self.short_description = discord.ui.TextInput(label="簡単な説明", placeholder="例: サーバーが落ちている", required=True)
-        self.detailed_problem = discord.ui.TextInput(label="詳細な問題", style=discord.TextStyle.paragraph, placeholder="詳しく教えてください", required=True)
-        self.add_item(self.short_description)
-        self.add_item(self.detailed_problem)
 
-    async def on_submit(self, interaction: discord.Interaction):
-        data = load_data()
-        user_id = str(interaction.user.id)
-        guild_id = str(interaction.guild.id)
-
-        # Create new ticket ID
-        ticket_id = 1
-        while str(ticket_id) in data.get('tickets', {}):
-            ticket_id += 1
-
-        # Get ticket description
-        description = f"**概要:** {self.short_description.value}\n\n**詳細:** {self.detailed_problem.value}"
-
-        # Create new channel
-        try:
-            # Check if category exists, create if necessary
-            if self.category_name:
-                category = discord.utils.get(interaction.guild.categories, name=self.category_name)
-                if not category:
-                    category = await interaction.guild.create_category(self.category_name)
-            else:
-                category = None
-
-            # Create the channel
-            channel = await interaction.guild.create_text_channel(
-                name=f'ticket-{ticket_id}',
-                topic=f'チケット #{ticket_id} | 作成者: {interaction.user.display_name}',
-                category=category
-            )
-
-            # Set channel permissions
-            await channel.set_permissions(interaction.user, read_messages=True, send_messages=True)
-            await channel.set_permissions(interaction.guild.default_role, read_messages=False)
-            await channel.set_permissions(interaction.guild.me, read_messages=True, send_messages=True)
-
-            # Send initial message
-            embed = discord.Embed(
-                title=f'🎫 チケット #{ticket_id}',
-                description=description,
-                color=0xff9900
-            )
-            embed.add_field(
-                name='作成者',
-                value=interaction.user.mention,
-                inline=False
-            )
-            embed.set_footer(text='サポートスタッフが対応します')
-
-            message = await channel.send(embed=embed)
-            await message.pin()
-            await channel.send(f"{interaction.user.mention} へのメンション", delete_after=1)
-
-            # Save ticket data
-            if 'tickets' not in data:
-                data['tickets'] = {}
-
-            data['tickets'][str(ticket_id)] = {
-                'user_id': user_id,
-                'guild_id': guild_id,
-                'channel_id': str(channel.id),
-                'created_at': datetime.now().isoformat(),
-                'description': description,
-                'status': 'open'
-            }
-            save_data(data)
-
-            # Send confirmation
-            await interaction.response.send_message(f'✅ チケット #{ticket_id} を作成しました！ {channel.mention} で詳細を確認してください。', ephemeral=True)
-
-        except discord.Forbidden:
-            await interaction.response.send_message('❌ チャンネルを作成する権限がありません。', ephemeral=True)
-        except Exception as e:
-            await interaction.response.send_message(f'❌ チケットの作成に失敗しました: {str(e)}', ephemeral=True)
 
 # Help system
 COMMAND_HELP = {
