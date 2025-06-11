@@ -492,17 +492,23 @@ class TicketModal(discord.ui.Modal, title='🎫 チケット作成'):
     )
 
     async def on_submit(self, interaction: discord.Interaction):
-        # Check if guild exists
-        if not interaction.guild:
-            await interaction.response.send_message('❌ このコマンドはサーバー内でのみ使用できます。', ephemeral=True)
-            return
+        try:
+            # Check if guild exists
+            if not interaction.guild:
+                await interaction.response.send_message('❌ このコマンドはサーバー内でのみ使用できます。', ephemeral=True)
+                return
 
-        data = load_data()
-        user_id = str(interaction.user.id)
-        ticket_id = str(len(data['tickets']) + 1)
+            data = load_data()
+            user_id = str(interaction.user.id)
+            ticket_id = str(len(data['tickets']) + 1)
 
-        # Create ticket channel
-        guild = interaction.guild
+            # Create ticket channel
+            guild = interaction.guild
+            
+            # Additional guild validation
+            if not guild or not guild.id:
+                await interaction.response.send_message('❌ サーバー情報の取得に失敗しました。', ephemeral=True)
+                return
 
         # Use custom category if specified, otherwise default
         if self.category_name:
@@ -529,6 +535,11 @@ class TicketModal(discord.ui.Modal, title='🎫 チケット作成'):
         # Create the ticket channel
         channel_name = f"ticket-{ticket_id}-{interaction.user.name}"
         try:
+            # Ensure we have proper permissions
+            if not guild.me.guild_permissions.manage_channels:
+                await interaction.response.send_message('❌ チャンネル作成権限がありません。', ephemeral=True)
+                return
+                
             ticket_channel = await guild.create_text_channel(
                 name=channel_name,
                 category=category,
@@ -567,8 +578,13 @@ class TicketModal(discord.ui.Modal, title='🎫 チケット作成'):
                 ephemeral=True
             )
 
+        except discord.Forbidden:
+            await interaction.response.send_message('❌ チケットチャンネルの作成権限がありません。管理者にBotの権限を確認してもらってください。', ephemeral=True)
+        except discord.HTTPException as e:
+            await interaction.response.send_message(f'❌ チケットチャンネルの作成に失敗しました（HTTP エラー）: {str(e)}', ephemeral=True)
         except Exception as e:
-            await interaction.response.send_message(f'❌ チケットチャンネルの作成に失敗しました: {str(e)}', ephemeral=True)
+            print(f"Unexpected error in ticket creation: {type(e).__name__}: {str(e)}")
+            await interaction.response.send_message(f'❌ 予期しないエラーが発生しました: {str(e)}', ephemeral=True)
 
 # Ticket panel command
 @bot.tree.command(name='ticket-panel', description='チケット作成パネルを設置')
