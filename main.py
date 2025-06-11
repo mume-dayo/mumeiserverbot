@@ -483,18 +483,11 @@ class TicketModal(discord.ui.Modal, title='🎫 チケット作成'):
         super().__init__()
         self.category_name = category_name
 
-    subject = discord.ui.TextInput(
-        label='件名',
-        placeholder='チケットの件名を入力してください...',
-        required=True,
-        max_length=100
-    )
-
     description = discord.ui.TextInput(
-        label='説明',
-        placeholder='問題の詳細を入力してください...',
+        label='内容',
+        placeholder='お困りの内容や質問を入力してください...',
         style=discord.TextStyle.long,
-        required=False,
+        required=True,
         max_length=1000
     )
 
@@ -544,8 +537,8 @@ class TicketModal(discord.ui.Modal, title='🎫 チケット作成'):
 
             data['tickets'][ticket_id] = {
                 'user_id': user_id,
-                'subject': str(self.subject.value),
-                'description': str(self.description.value) if self.description.value else "",
+                'subject': 'サポートチケット',
+                'description': str(self.description.value),
                 'status': 'open',
                 'created_at': datetime.now().isoformat(),
                 'guild_id': str(interaction.guild.id),
@@ -557,7 +550,7 @@ class TicketModal(discord.ui.Modal, title='🎫 チケット作成'):
             # Send initial message to ticket channel
             embed = discord.Embed(
                 title=f'🎫 チケット #{ticket_id}',
-                description=f'**件名:** {self.subject.value}\n**説明:** {self.description.value or "なし"}\n**作成者:** {interaction.user.mention}',
+                description=f'**件名:** サポートチケット\n**内容:** {self.description.value}\n**作成者:** {interaction.user.mention}',
                 color=0xff9900
             )
             embed.add_field(name='ステータス', value='🟢 オープン', inline=True)
