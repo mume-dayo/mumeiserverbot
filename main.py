@@ -6,8 +6,6 @@ from datetime import datetime
 from flask import Flask
 from threading import Thread
 import time
-import g4f
-import asyncio
 
 # Flask app for Render health check
 app = Flask(__name__)
@@ -165,11 +163,11 @@ async def on_message(message):
         if len(user_message_history[user_id]) >= 3:
             # Get the last 3 messages
             recent_messages = user_message_history[user_id][-3:]
-
+            
             # Check if all 3 messages have the same content and are not empty
             if (len(set(msg['content'] for msg in recent_messages)) == 1 and 
                 recent_messages[0]['content'].strip() != ""):
-
+                
                 try:
                     print(f"Identical message spam detected from {message.author.name} (ID: {user_id})")
                     print(f"Repeated message: {message.content[:50]}...")
@@ -184,7 +182,7 @@ async def on_message(message):
                             # Only delete the last 3 identical messages
                             if len(messages_to_delete) >= 3:
                                 break
-
+                    
                     # Delete only the 3 most recent identical messages
                     for msg in messages_to_delete[:3]:
                         try:
@@ -472,7 +470,7 @@ async def setup_role(interaction: discord.Interaction, role_name: str = None):
     try:
         # Immediately defer the response
         await interaction.response.defer()
-
+        
         if not is_allowed_server(interaction.guild.id):
             await interaction.followup.send('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
             return
@@ -795,7 +793,7 @@ async def giveaway(interaction: discord.Interaction, prize: str):
     try:
         # Immediately defer the response
         await interaction.response.defer()
-
+        
         if not is_allowed_server(interaction.guild.id):
             await interaction.followup.send('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
             return
@@ -819,8 +817,7 @@ async def giveaway(interaction: discord.Interaction, prize: str):
     except Exception as e:
         print(f"Error in giveaway command: {e}")
         try:
-            if not```python
- interaction.response.is_done():
+            if not interaction.response.is_done():
                 await interaction.response.send_message(f'❌ エラーが発生しました: {str(e)}', ephemeral=True)
             else:
                 await interaction.followup.send(f'❌ エラーが発生しました: {str(e)}', ephemeral=True)
@@ -833,29 +830,29 @@ def add_experience(user_id, guild_id, amount):
     data = load_data()
     if 'user_levels' not in data:
         data['user_levels'] = {}
-
+    
     guild_key = str(guild_id)
     user_key = str(user_id)
-
+    
     if guild_key not in data['user_levels']:
         data['user_levels'][guild_key] = {}
-
+    
     if user_key not in data['user_levels'][guild_key]:
         data['user_levels'][guild_key][user_key] = {'level': 1, 'xp': 0, 'total_xp': 0}
-
+    
     user_data = data['user_levels'][guild_key][user_key]
     user_data['xp'] += amount
     user_data['total_xp'] += amount
-
+    
     # Calculate level (100 XP per level)
     new_level = (user_data['total_xp'] // 100) + 1
-
+    
     if new_level > user_data['level']:
         user_data['level'] = new_level
         user_data['xp'] = user_data['total_xp'] % 100
         save_data(data)
         return new_level  # Return new level for level up message
-
+    
     save_data(data)
     return None
 
@@ -864,13 +861,13 @@ def get_user_level_data(user_id, guild_id):
     data = load_data()
     if 'user_levels' not in data:
         return {'level': 1, 'xp': 0, 'total_xp': 0}
-
+    
     guild_key = str(guild_id)
     user_key = str(user_id)
-
+    
     if guild_key not in data['user_levels'] or user_key not in data['user_levels'][guild_key]:
         return {'level': 1, 'xp': 0, 'total_xp': 0}
-
+    
     return data['user_levels'][guild_key][user_key]
 
 @bot.tree.command(name='level', description='ユーザーのレベルを表示')
@@ -881,11 +878,11 @@ async def level_command(interaction: discord.Interaction, user: discord.Member =
 
     target_user = user or interaction.user
     level_data = get_user_level_data(target_user.id, interaction.guild.id)
-
+    
     # Calculate XP needed for next level
     current_level = level_data['level']
     xp_needed = 100 - level_data['xp']
-
+    
     embed = discord.Embed(
         title=f'📊 {target_user.display_name} のレベル',
         color=0x00ff99
@@ -894,17 +891,17 @@ async def level_command(interaction: discord.Interaction, user: discord.Member =
     embed.add_field(name='⭐ 経験値', value=f"{level_data['xp']}/100 XP", inline=True)
     embed.add_field(name='📈 総経験値', value=f"{level_data['total_xp']} XP", inline=True)
     embed.add_field(name='🚀 次のレベルまで', value=f"{xp_needed} XP", inline=False)
-
+    
     # Progress bar
     progress = level_data['xp'] / 100
     bar_length = 20
     filled_length = int(bar_length * progress)
     bar = '█' * filled_length + '░' * (bar_length - filled_length)
     embed.add_field(name='📊 進行度', value=f"`{bar}` {level_data['xp']}%", inline=False)
-
+    
     embed.set_thumbnail(url=target_user.avatar.url if target_user.avatar else None)
     embed.set_footer(text='メッセージを送信して経験値を獲得しよう！')
-
+    
     await interaction.response.send_message(embed=embed)
 
 @bot.tree.command(name='ranking', description='サーバーのレベルランキングを表示')
@@ -917,18 +914,18 @@ async def ranking_command(interaction: discord.Interaction):
     if 'user_levels' not in data or str(interaction.guild.id) not in data['user_levels']:
         await interaction.response.send_message('❌ まだレベルデータがありません。', ephemeral=True)
         return
-
+    
     guild_data = data['user_levels'][str(interaction.guild.id)]
-
+    
     # Sort users by total XP
     sorted_users = sorted(guild_data.items(), key=lambda x: x[1]['total_xp'], reverse=True)
-
+    
     embed = discord.Embed(
         title=f'🏆 {interaction.guild.name} レベルランキング',
         description='サーバー内の上位ユーザー',
         color=0xffd700
     )
-
+    
     for i, (user_id, level_data) in enumerate(sorted_users[:10]):  # Top 10
         user = interaction.guild.get_member(int(user_id))
         if user:
@@ -938,7 +935,7 @@ async def ranking_command(interaction: discord.Interaction):
                 value=f'レベル: {level_data["level"]} | 総XP: {level_data["total_xp"]}',
                 inline=False
             )
-
+    
     embed.set_footer(text='メッセージを送信してランキングを上げよう！')
     await interaction.response.send_message(embed=embed)
 
@@ -969,32 +966,32 @@ class PollView(discord.ui.View):
             data = load_data()
             if 'polls' not in data:
                 data['polls'] = {}
-
+            
             if self.poll_id not in data['polls']:
                 await interaction.response.send_message('❌ この投票は見つかりません。', ephemeral=True)
                 return
-
+            
             poll_data = data['polls'][self.poll_id]
             user_id = str(interaction.user.id)
-
+            
             # Check if user already voted
             if user_id in poll_data['voters']:
                 old_option = poll_data['voters'][user_id]
                 poll_data['votes'][old_option] -= 1
-
+            
             # Record new vote
             poll_data['voters'][user_id] = option_index
             poll_data['votes'][option_index] += 1
-
+            
             save_data(data)
-
+            
             # Update embed
             embed = discord.Embed(
                 title=f'📊 {poll_data["question"]}',
                 description='下のボタンをクリックして投票してください。',
                 color=0x0099ff
             )
-
+            
             total_votes = sum(poll_data['votes'])
             for i, option in enumerate(poll_data['options']):
                 votes = poll_data['votes'][i]
@@ -1002,42 +999,42 @@ class PollView(discord.ui.View):
                 bar_length = 20
                 filled_length = int(bar_length * percentage / 100)
                 bar = '█' * filled_length + '░' * (bar_length - filled_length)
-
+                
                 embed.add_field(
                     name=f'{["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"][i]} {option}',
                     value=f'`{bar}` {votes} 票 ({percentage:.1f}%)',
                     inline=False
                 )
-
+            
             embed.set_footer(text=f'総投票数: {total_votes}票 | 作成者: {poll_data["creator"]}')
-
+            
             try:
                 await interaction.response.edit_message(embed=embed, view=self)
-
+                
                 # Add XP for voting
                 add_experience(interaction.user.id, interaction.guild.id, 10)
-
+                
             except:
                 await interaction.response.send_message(f'✅ **{self.options[option_index]}** に投票しました！', ephemeral=True)
-
+        
         return vote_callback
 
 @bot.tree.command(name='poll', description='投票を作成')
 async def poll_command(interaction: discord.Interaction, question: str, options: str):
     try:
         await interaction.response.defer()
-
+        
         if not is_allowed_server(interaction.guild.id):
             await interaction.followup.send('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
             return
 
         # Parse options (comma separated)
         option_list = [opt.strip() for opt in options.split(',')]
-
+        
         if len(option_list) < 2:
             await interaction.followup.send('❌ 最低2つの選択肢が必要です。', ephemeral=True)
             return
-
+        
         if len(option_list) > 10:
             await interaction.followup.send('❌ 選択肢は最大10個までです。', ephemeral=True)
             return
@@ -1048,35 +1045,35 @@ async def poll_command(interaction: discord.Interaction, question: str, options:
             description='下のボタンをクリックして投票してください。',
             color=0x0099ff
         )
-
+        
         for i, option in enumerate(option_list):
             embed.add_field(
                 name=f'{["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"][i]} {option}',
                 value='`░░░░░░░░░░░░░░░░░░░░` 0 票 (0.0%)',
                 inline=False
             )
-
+        
         embed.set_footer(text=f'総投票数: 0票 | 作成者: {interaction.user.display_name}')
-
+        
         # Create poll view
         view = PollView("temp", option_list)
-
+        
         # Send poll
         await interaction.followup.send(embed=embed, view=view)
-
+        
         # Get message and update poll data
         message = await interaction.original_response()
         poll_id = str(message.id)
-
+        
         # Update view with correct poll ID
         view.poll_id = poll_id
         await message.edit(view=view)
-
+        
         # Save poll data
         data = load_data()
         if 'polls' not in data:
             data['polls'] = {}
-
+            
         data['polls'][poll_id] = {
             'question': question,
             'options': option_list,
@@ -1087,7 +1084,7 @@ async def poll_command(interaction: discord.Interaction, question: str, options:
             'guild_id': interaction.guild.id
         }
         save_data(data)
-
+        
         # Add XP for creating poll
         add_experience(interaction.user.id, interaction.guild.id, 20)
 
@@ -1111,34 +1108,34 @@ async def poll_results_command(interaction: discord.Interaction, poll_id: str):
     if 'polls' not in data or poll_id not in data['polls']:
         await interaction.response.send_message('❌ 指定された投票が見つかりません。', ephemeral=True)
         return
-
+    
     poll_data = data['polls'][poll_id]
-
+    
     embed = discord.Embed(
         title=f'📊 投票結果: {poll_data["question"]}',
         color=0x00ff00
     )
-
+    
     total_votes = sum(poll_data['votes'])
     winner_index = poll_data['votes'].index(max(poll_data['votes'])) if total_votes > 0 else 0
-
+    
     for i, option in enumerate(poll_data['options']):
         votes = poll_data['votes'][i]
         percentage = (votes / total_votes * 100) if total_votes > 0 else 0
         status = '🏆 ' if i == winner_index and total_votes > 0 else ''
-
+        
         embed.add_field(
             name=f'{status}{option}',
             value=f'{votes} 票 ({percentage:.1f}%)',
             inline=True
         )
-
+    
     embed.add_field(
         name='📈 統計',
         value=f'**総投票数:** {total_votes}\n**投票者数:** {len(poll_data["voters"])}\n**作成者:** {poll_data["creator"]}',
         inline=False
     )
-
+    
     await interaction.response.send_message(embed=embed)
 
 # Ticket system commands
@@ -1151,31 +1148,31 @@ class TicketCloseView(discord.ui.View):
     async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
         data = load_data()
         tickets = data.get('tickets', {})
-
+        
         if str(self.ticket_id) not in tickets:
             await interaction.response.send_message('❌ チケットが見つかりません。', ephemeral=True)
             return
-
+        
         ticket_data = tickets[str(self.ticket_id)]
-
+        
         # Check if user is ticket creator or admin
         is_creator = str(interaction.user.id) == ticket_data['user_id']
         is_admin = interaction.user.guild_permissions.administrator
-
+        
         if not is_creator and not is_admin:
             await interaction.response.send_message('❌ チケットを閉じる権限がありません。', ephemeral=True)
             return
-
+        
         if ticket_data['status'] == 'closed':
             await interaction.response.send_message('❌ このチケットは既に閉じられています。', ephemeral=True)
             return
-
+        
         # Update ticket status
         data['tickets'][str(self.ticket_id)]['status'] = 'closed'
         data['tickets'][str(self.ticket_id)]['closed_at'] = datetime.now().isoformat()
         data['tickets'][str(self.ticket_id)]['closed_by'] = str(interaction.user.id)
         save_data(data)
-
+        
         # Send closure message
         embed = discord.Embed(
             title='🔒 チケットクローズ',
@@ -1183,9 +1180,9 @@ class TicketCloseView(discord.ui.View):
             color=0xff0000
         )
         embed.set_footer(text='このチャンネルは5秒後に削除されます')
-
+        
         await interaction.response.send_message(embed=embed)
-
+        
         # Delete channel after 5 seconds
         import asyncio
         await asyncio.sleep(5)
@@ -1202,7 +1199,7 @@ class TicketPanelView(discord.ui.View):
     @discord.ui.button(label='🎫 チケット作成', style=discord.ButtonStyle.primary, emoji='🎫')
     async def create_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.create_ticket_channel(interaction)
-
+    
     async def create_ticket_channel(self, interaction):
         data = load_data()
         user_id = str(interaction.user.id)
@@ -1293,7 +1290,7 @@ async def ticket_panel(interaction: discord.Interaction, category_name: str = No
     try:
         # Immediately defer the response
         await interaction.response.defer()
-
+        
         if not is_allowed_server(interaction.guild.id):
             await interaction.followup.send('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
             return
@@ -1441,18 +1438,18 @@ async def setup_server_log(interaction: discord.Interaction, target_server_id: s
     try:
         target_guild_id = int(target_server_id)
         target_guild = bot.get_guild(target_guild_id)
-
+        
         if not target_guild:
             await interaction.response.send_message('❌ 指定されたサーバーが見つかりません。Botがそのサーバーに参加していることを確認してください。', ephemeral=True)
             return
-
+        
         # Check if bot has permissions in target server
         if not target_guild.me.guild_permissions.manage_channels:
             await interaction.response.send_message('❌ 転送先サーバーでチャンネル管理権限が必要です。', ephemeral=True)
             return
 
         source_guild_id = str(interaction.guild.id)
-
+        
         # Update configuration
         server_log_configs[source_guild_id] = target_server_id
         save_server_log_config()
@@ -1483,7 +1480,7 @@ async def server_log_status(interaction: discord.Interaction):
         return
 
     source_guild_id = str(interaction.guild.id)
-
+    
     embed = discord.Embed(
         title='📊 サーバーログ設定状況',
         color=0x0099ff
@@ -1493,7 +1490,7 @@ async def server_log_status(interaction: discord.Interaction):
         target_server_id = server_log_configs[source_guild_id]
         target_guild = bot.get_guild(int(target_server_id))
         target_name = target_guild.name if target_guild else f"不明なサーバー (ID: {target_server_id})"
-
+        
         embed.add_field(
             name='🟢 ログ転送設定',
             value=f'**状態:** 有効\n**転送先:** {target_name}\n**サーバーID:** {target_server_id}',
@@ -1528,202 +1525,7 @@ async def server_log_status(interaction: discord.Interaction):
 
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
-# ChatGPT conversation using g4f
-@bot.tree.command(name='chatgpt', description='ChatGPTと会話する')
-async def chatgpt_command(interaction: discord.Interaction, message: str):
-    if not is_allowed_server(interaction.guild.id):
-        await interaction.response.send_message('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
-        return
 
-    # Defer the response since AI might take some time
-    try:
-        await interaction.response.defer()
-    except discord.errors.NotFound:
-        # If interaction has expired, send a normal messageto the channel
-        await interaction.channel.send('⏰ 処理に時間がかかっています。もう一度お試しください。')
-        return
-
-    try:
-        # Create a response using g4f
-        response = await asyncio.to_thread(
-            g4f.ChatCompletion.create,
-            model=g4f.models.default,
-            messages=[{"role": "user", "content": message}]
-        )
-
-        # Create embed for the response
-        embed = discord.Embed(
-            title='🤖 ChatGPT 応答',
-            description=response,
-            color=0x00ff99
-        )
-        embed.add_field(
-            name='📝 質問',
-            value=message,
-            inline=False
-        )
-        embed.set_footer(text=f'質問者: {interaction.user.display_name}')
-
-        # Send the response
-        try:
-            await interaction.followup.send(embed=embed)
-        except discord.errors.NotFound:
-            # If interaction has expired, send to channel instead
-            await interaction.channel.send(embed=embed)
-
-        # Add experience for using ChatGPT
-        add_experience(interaction.user.id, interaction.guild.id, 15)
-
-    except Exception as e:
-        print(f"ChatGPT error: {e}")
-        error_embed = discord.Embed(
-            title='❌ ChatGPTとの会話中にエラーが発生しました',
-            description=f'エラー詳細: {str(e)}',
-            color=0xff0000
-        )
-        try:
-            await interaction.followup.send(embed=error_embed, ephemeral=True)
-        except discord.errors.NotFound:
-            # If interaction has expired, send to channel instead
-            await interaction.channel.send(embed=error_embed)
-
-# Advanced ChatGPT conversation with context
-conversation_contexts = {}  # {user_id: [{"role": "user/assistant", "content": "message"}]}
-
-@bot.tree.command(name='chat', description='ChatGPTと継続的な会話をする（会話の文脈を保持）')
-async def chat_command(interaction: discord.Interaction, message: str, reset_context: bool = False):
-    if not is_allowed_server(interaction.guild.id):
-        await interaction.response.send_message('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
-        return
-
-    user_id = interaction.user.id
-
-    # Reset context if requested
-    if reset_context:
-        conversation_contexts[user_id] = []
-        await interaction.response.send_message('✅ 会話の文脈をリセットしました。', ephemeral=True)
-        return
-
-    # Defer response immediately after permission check
-    try:
-        await interaction.response.defer()
-    except discord.errors.NotFound:
-        # If interaction has expired, send a normal message to the channel
-        await interaction.channel.send('⏰ 処理に時間がかかっています。もう一度お試しください。')
-        return
-
-    # Initialize context for new users
-    if user_id not in conversation_contexts:
-        conversation_contexts[user_id] = []
-
-    # Add user message to context
-    conversation_contexts[user_id].append({"role": "user", "content": message})
-
-    # Keep only last 10 messages to prevent context overflow
-    if len(conversation_contexts[user_id]) > 10:
-        conversation_contexts[user_id] = conversation_contexts[user_id][-10:]
-
-    try:
-        # Prepare messages for ChatGPT
-        messages = [
-            {"role": "system", "content": "あなたは親切で知識豊富なアシスタントです。日本語で回答してください。"}
-        ] + conversation_contexts[user_id]
-
-        # Get response from ChatGPT
-        response = await asyncio.to_thread(
-            g4f.ChatCompletion.create,
-            model=g4f.models.default,
-            messages=messages
-        )
-
-        # Add assistant response to context
-        conversation_contexts[user_id].append({"role": "assistant", "content": response})
-
-        # Create embed for the response
-        embed = discord.Embed(
-            title='💬 ChatGPT 会話',
-            description=response,
-            color=0x0099ff
-        )
-        embed.add_field(
-            name='💭 あなたの質問',
-            value=message,
-            inline=False
-        )
-        embed.add_field(
-            name='📊 会話ターン数',
-            value=f'{len(conversation_contexts[user_id])//2}回',
-            inline=True
-        )
-        embed.set_footer(text=f'文脈をリセット: /chat reset_context:True | 質問者: {interaction.user.display_name}')
-
-        try:
-            await interaction.followup.send(embed=embed)
-        except discord.errors.NotFound:
-            # If interaction has expired, send to channel instead
-            await interaction.channel.send(embed=embed)
-
-        # Add experience for conversation
-        add_experience(interaction.user.id, interaction.guild.id, 20)
-
-    except Exception as e:
-        print(f"Chat error: {e}")
-        error_embed = discord.Embed(
-            title='❌ ChatGPTとの会話中にエラーが発生しました',
-            description=f'エラー詳細: {str(e)}',
-            color=0xff0000
-        )
-        try:
-            await interaction.followup.send(embed=error_embed, ephemeral=True)
-        except discord.errors.NotFound:
-            # If interaction has expired, send to channel instead
-            await interaction.channel.send(embed=error_embed)
-
-@bot.tree.command(name='ai-translate', description='テキストを他の言語に翻訳')
-async def ai_translate_command(interaction: discord.Interaction, text: str, target_language: str = "English"):
-    if not is_allowed_server(interaction.guild.id):
-        await interaction.response.send_message('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
-        return
-
-    await interaction.response.defer()
-
-    try:
-        prompt = f"Translate the following text to {target_language}. Only provide the translation, no explanations:\n\n{text}"
-
-        response = await asyncio.to_thread(
-            g4f.ChatCompletion.create,
-            model=g4f.models.default,
-            messages=[{"role": "user", "content": prompt}]
-        )
-
-        embed = discord.Embed(
-            title='🌐 AI翻訳',
-            color=0x00ff99
-        )
-        embed.add_field(
-            name='📝 原文',
-            value=text[:1000] + ('...' if len(text) > 1000 else ''),
-            inline=False
-        )
-        embed.add_field(
-            name=f'🔄 翻訳結果 ({target_language})',
-            value=response[:1000] + ('...' if len(response) > 1000 else ''),
-            inline=False
-        )
-        embed.set_footer(text=f'翻訳者: {interaction.user.display_name}')
-
-        await interaction.followup.send(embed=embed)
-
-        # Add experience for translation
-        add_experience(interaction.user.id, interaction.guild.id, 10)
-
-    except Exception as e:
-        error_embed = discord.Embed(
-            title='❌ 翻訳エラー',
-            description=f'翻訳中にエラーが発生しました: {str(e)}',
-            color=0xff0000
-        )
-        await interaction.followup.send(embed=error_embed, ephemeral=True)
 
 # Help system
 COMMAND_HELP = {
@@ -1829,21 +1631,6 @@ COMMAND_HELP = {
         'description': 'サーバーのレベルランキングを表示',
         'usage': '/ranking',
         'details': 'サーバー内のユーザーのレベルランキングを表示します。上位10名まで表示されます。'
-    },
-    'chatgpt': {
-        'description': 'ChatGPTと会話する',
-        'usage': '/chatgpt <メッセージ>',
-        'details': 'ChatGPTと単発の会話をします。質問や依頼を送信すると、AIが応答します。使用で15XPを獲得できます。'
-    },
-    'chat': {
-        'description': 'ChatGPTと継続的な会話をする（会話の文脈を保持）',
-        'usage': '/chat <メッセージ> [reset_context:True]',
-        'details': 'ChatGPTと継続的な会話をします。過去の会話内容を覚えているため、より自然な対話が可能です。reset_context:Trueで会話履歴をリセットできます。使用で20XPを獲得できます。'
-    },
-    'ai-translate': {
-        'description': 'テキストを他の言語に翻訳',
-        'usage': '/ai-translate <テキスト> [target_language:言語名]',
-        'details': 'AIを使用してテキストを他の言語に翻訳します。target_languageを省略するとEnglishに翻訳されます。使用で10XPを獲得できます。'
     }
 }
 
@@ -1937,24 +1724,24 @@ async def on_message_for_server_logging(message):
     """Handle server-to-server message logging"""
     if message.author.bot:
         return
-
+    
     source_guild_id = str(message.guild.id)
-
+    
     # Check if this server has logging configured
     if source_guild_id not in server_log_configs:
         return
-
+    
     target_guild_id = server_log_configs[source_guild_id]
     target_guild = bot.get_guild(int(target_guild_id))
-
+    
     if not target_guild:
         print(f"Target guild {target_guild_id} not found")
         return
-
+    
     # Find or create corresponding channel in target server
     source_channel_name = message.channel.name
     target_channel = discord.utils.get(target_guild.text_channels, name=source_channel_name)
-
+    
     if not target_channel:
         try:
             # Create channel if it doesn't exist
@@ -1963,7 +1750,7 @@ async def on_message_for_server_logging(message):
                 category = discord.utils.get(target_guild.categories, name=message.channel.category.name)
                 if not category:
                     category = await target_guild.create_category(message.channel.category.name)
-
+            
             target_channel = await target_guild.create_text_channel(
                 name=source_channel_name,
                 category=category,
@@ -1973,7 +1760,7 @@ async def on_message_for_server_logging(message):
         except Exception as e:
             print(f"Failed to create channel: {e}")
             return
-
+    
     # Prepare log message
     embed = discord.Embed(
         description=message.content,
@@ -1985,21 +1772,21 @@ async def on_message_for_server_logging(message):
         icon_url=message.author.avatar.url if message.author.avatar else None
     )
     embed.set_footer(text=f"From: {message.guild.name} #{message.channel.name}")
-
+    
     # Handle attachments
     files = []
     if message.attachments:
         attachment_info = []
         for attachment in message.attachments:
             attachment_info.append(f"[{attachment.filename}]({attachment.url})")
-
+        
         if attachment_info:
             embed.add_field(
                 name="📎 添付ファイル",
                 value="\n".join(attachment_info),
                 inline=False
             )
-
+    
     try:
         await target_channel.send(embed=embed)
         print(f"Logged message from {message.guild.name} to {target_guild.name}")
