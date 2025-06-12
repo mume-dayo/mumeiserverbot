@@ -141,55 +141,75 @@ async def on_message(message):
         if user_id in bot_message_count:
             del bot_message_count[user_id]
 
-    # Anti-spam for human users
+    # Anti-spam for human users - only target identical consecutive messages
     if not message.author.bot:
         # Initialize user history if not exists
         if user_id not in user_message_history:
             user_message_history[user_id] = []
 
-        # Add current message timestamp
-        user_message_history[user_id].append(current_time)
+        # Add current message with content and timestamp
+        user_message_history[user_id].append({
+            'content': message.content,
+            'timestamp': current_time
+        })
 
-        # Keep only messages from last 10 seconds
+        # Keep only messages from last 30 seconds
         user_message_history[user_id] = [
-            timestamp for timestamp in user_message_history[user_id] 
-            if current_time - timestamp <= 10
+            msg for msg in user_message_history[user_id]
+            if current_time - msg['timestamp'] <= 30
         ]
 
-        message_count = len(user_message_history[user_id])
+        # Check for identical consecutive messages
+        if len(user_message_history[user_id]) >= 3:
+            # Get the last 3 messages
+            recent_messages = user_message_history[user_id][-3:]
+            
+            # Check if all 3 messages have the same content and are not empty
+            if (len(set(msg['content'] for msg in recent_messages)) == 1 and 
+                recent_messages[0]['content'].strip() != ""):
+                
+                try:
+                    print(f"Identical message spam detected from {message.author.name} (ID: {user_id})")
+                    print(f"Repeated message: {message.content[:50]}...")
 
-        # Check for spam (3+ messages in 10 seconds)
-        if message_count >= 3:
-            try:
-                print(f"Attempting to timeout user {message.author.name} (ID: {user_id})")
-                print(f"Bot permissions: {message.guild.me.guild_permissions}")
-                print(f"Bot highest role: {message.guild.me.top_role}")
-                print(f"Target user highest role: {message.author.top_role}")
+                    # Delete all identical messages in the channel from this user
+                    messages_to_delete = []
+                    async for msg in message.channel.history(limit=50):
+                        if (msg.author.id == user_id and 
+                            msg.content == message.content and
+                            current_time - msg.created_at.timestamp() <= 30):
+                            messages_to_delete.append(msg)
+                    
+                    # Delete all found identical messages
+                    for msg in messages_to_delete:
+                        try:
+                            await msg.delete()
+                        except:
+                            pass
 
-                # Delete the spam message
-                await message.delete()
+                    print(f"Deleted {len(messages_to_delete)} identical messages")
 
-                # 3+ messages: 1 hour timeout immediately
-                from datetime import timedelta
-                timeout_duration = discord.utils.utcnow() + timedelta(hours=1)
-                await message.author.timeout(timeout_duration, reason="Spam detected - 3+ consecutive messages")
+                    # 3+ identical messages: 1 hour timeout
+                    from datetime import timedelta
+                    timeout_duration = discord.utils.utcnow() + timedelta(hours=1)
+                    await message.author.timeout(timeout_duration, reason="同じメッセージの連投によるスパム")
 
-                print(f"Successfully timed out {message.author.name}")
+                    print(f"Successfully timed out {message.author.name}")
 
-                warning_embed = discord.Embed(
-                    title="🚫 タイムアウト適用",
-                    description=f"{message.author.mention} は連投により1時間のタイムアウトが適用されました。",
-                    color=0xff0000
-                )
-                await message.channel.send(embed=warning_embed, delete_after=10)
+                    warning_embed = discord.Embed(
+                        title="🚫 タイムアウト適用",
+                        description=f"{message.author.mention} は同じメッセージの連投により1時間のタイムアウトが適用されました。",
+                        color=0xff0000
+                    )
+                    sent_warning = await message.channel.send(embed=warning_embed, delete_after=15)
 
-                # Clear message history after action
-                user_message_history[user_id] = []
+                    # Clear message history after action
+                    user_message_history[user_id] = []
 
-            except discord.Forbidden as e:
-                print(f"Failed to moderate {message.author.name} - insufficient permissions: {e}")
-            except Exception as e:
-                print(f"Error in anti-spam: {e}")
+                except discord.Forbidden as e:
+                    print(f"Failed to moderate {message.author.name} - insufficient permissions: {e}")
+                except Exception as e:
+                    print(f"Error in anti-spam: {e}")
 
     # Add experience for messages (exclude bots and commands)
     if not message.author.bot and not message.content.startswith('/'):
@@ -578,8 +598,8 @@ async def antispam_config(interaction: discord.Interaction, action: str = "show"
             color=0x0099ff
         )
         embed.add_field(
-            name="連投検知",
-            value="• 10秒間に3回以上: 1時間タイムアウト",
+            name="同一メッセージ連投検知",
+            value="• 30秒以内に同じメッセージを3回以上: 全て削除 + 1時間タイムアウト",
             inline=False
         )
         embed.add_field(
@@ -1535,7 +1555,7 @@ COMMAND_HELP = {
     'antispam-config': {
         'description': '荒らし対策設定を表示・変更',
         'usage': '/antispam-config [action]',
-        'details': '荒らし対策の設定を表示または変更します。actionに"show"で設定表示、"reset"でデータリセットができます。メッセージ管理権限が必要です。'
+        'details': '同じメッセージの連投を検知して対策します。30秒以内に同じメッセージを3回以上送信した場合、すべての重複メッセージを削除し1時間のタイムアウトを適用します。actionに"show"で設定表示、"reset"でデータリセットができます。メッセージ管理権限が必要です。'
     },
     'spam-status': {
         'description': '現在のスパム検知状況を表示',
