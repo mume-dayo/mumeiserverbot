@@ -1886,6 +1886,16 @@ COMMAND_HELP = {
         'description': '名言を指定間隔で送信するチャンネルを設定',
         'usage': '/meigen_channel_setting [間隔]',
         'details': '実行したチャンネルに指定した間隔で有名人の名言を送信するように設定します。間隔は30s（秒）、5m（分）、2h（時間）の形式で指定できます。省略時は1時間間隔です。最小間隔は60秒です。サーバー管理権限が必要です。'
+    },
+    'timenuke': {
+        'description': '指定した時間間隔でチャンネルを定期的にnuke',
+        'usage': '/timenuke <間隔>',
+        'details': '実行したチャンネルを指定した間隔で定期的に再生成します。間隔は1m（分）、2h（時間）、1d（日）の形式で指定できます。最小間隔は1分です。チャンネル内のメッセージは全て削除されますが、チャンネル設定は引き継がれます。チャンネル管理権限が必要です。'
+    },
+    'stop-timenuke': {
+        'description': '定期nukeを停止',
+        'usage': '/stop-timenuke',
+        'details': '現在設定されている定期ヌークを停止します。チャンネル管理権限が必要です。'
     }
 }
 
@@ -2085,6 +2095,699 @@ async def create_channel_if_not_exists(guild, channel_name, channel_type="text",
         elif channel_type == "voice":
             await guild.create_voice_channel(channel_name, category=category)
         print(f"Channel {channel_name} created successfully.")
+
+# Time nuke system
+time_nuke_tasks = {}  # {guild_id: task}
+
+async def execute_time_nuke(guild_id, channel_id, interval_seconds):
+    """Execute nuke at specified intervals"""
+    while True:
+        await asyncio.sleep(interval_seconds)
+        
+        try:
+            guild = bot.get_guild(int(guild_id))
+            if not guild:
+                break
+                
+            channel = guild.get_channel(int(channel_id))
+            if not channel:
+                break
+            
+            # Store channel settings
+            channel_name = channel.name
+            channel_topic = channel.topic
+            channel_category = channel.category
+            channel_position = channel.position
+            channel_overwrites = channel.overwrites
+
+            # Create new channel with same settings first
+            new_channel = await guild.create_text_channel(
+                name=f"{channel_name}-new",
+                topic=channel_topic,
+                category=channel_category,
+                overwrites=channel_overwrites
+            )
+
+            # Send confirmation in new channel
+            embed = discord.Embed(
+                title='💥 定期ヌーク実行！',
+                description='チャンネルが定期的に再生成されました。',
+                color=0xff0000
+            )
+            await new_channel.send(embed=embed)
+
+            # Delete the old channel
+            await channel.delete(reason="Time nuke executed")
+
+            # Rename the new channel to the original name
+            await new_channel.edit(name=channel_name, position=channel_position)
+            
+            print(f"Time nuke executed for {guild.name}#{channel_name}")
+            
+        except Exception as e:
+            print(f"Error in time nuke: {e}")
+            break
+
+@bot.tree.command(name='timenuke', description='指定した時間間隔でチャンネルを定期的にnuke')
+async def timenuke_command(interaction: discord.Interaction, interval: str):
+    if not is_allowed_server(interaction.guild.id):
+        await interaction.response.send_message('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
+        return
+
+    if not interaction.user.guild_permissions.manage_channels:
+        await interaction.response.send_message('❌ チャンネル管理権限が必要です。', ephemeral=True)
+        return
+
+    # Parse interval
+    try:
+        if interval.endswith('m'):
+            minutes = int(interval[:-1])
+            if minutes < 1:
+                await interaction.response.send_message('❌ 最小間隔は1分です。', ephemeral=True)
+                return
+            seconds = minutes * 60
+        elif interval.endswith('h'):
+            hours = int(interval[:-1])
+            seconds = hours * 3600
+        elif interval.endswith('d'):
+            days = int(interval[:-1])
+            seconds = days * 86400
+        else:
+            await interaction.response.send_message('❌ 時間形式が正しくありません。例: 5m, 2h, 1d', ephemeral=True)
+            return
+    except ValueError:
+        await interaction.response.send_message('❌ 時間形式が正しくありません。例: 5m, 2h, 1d', ephemeral=True)
+        return
+
+    guild_id = str(interaction.guild.id)
+    channel_id = str(interaction.channel.id)
+
+    # Stop existing task if any
+    if guild_id in time_nuke_tasks:
+        time_nuke_tasks[guild_id].cancel()
+
+    # Start new time nuke task
+    task = asyncio.create_task(execute_time_nuke(guild_id, channel_id, seconds))
+    time_nuke_tasks[guild_id] = task
+
+    # Format interval display
+    if seconds >= 86400:
+        interval_display = f"{seconds // 86400}日"
+    elif seconds >= 3600:
+        interval_display = f"{seconds // 3600}時間"
+    else:
+        interval_display = f"{seconds // 60}分"
+
+    embed = discord.Embed(
+        title='⏰ 定期ヌーク設定完了',
+        description=f'このチャンネル（{interaction.channel.mention}）を{interval_display}間隔で定期的にヌークします。',
+        color=0xff6b6b
+    )
+    embed.add_field(
+        name='⚠️ 注意事項',
+        value='• チャンネル内のメッセージは全て削除されます\n• チャンネル設定は引き継がれます\n• Bot再起動まで有効です',
+        inline=False
+    )
+    embed.add_field(
+        name='⏰ 実行間隔',
+        value=f'{interval_display}ごと',
+        inline=False
+    )
+    embed.set_footer(text='停止するには /stop-timenuke を使用してください')
+
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name='stop-timenuke', description='定期nukeを停止')
+async def stop_timenuke_command(interaction: discord.Interaction):
+    if not is_allowed_server(interaction.guild.id):
+        await interaction.response.send_message('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
+        return
+
+    if not interaction.user.guild_permissions.manage_channels:
+        await interaction.response.send_message('❌ チャンネル管理権限が必要です。', ephemeral=True)
+        return
+
+    guild_id = str(interaction.guild.id)
+
+    if guild_id not in time_nuke_tasks:
+        await interaction.response.send_message('❌ このサーバーで定期ヌークは設定されていません。', ephemeral=True)
+        return
+
+    # Stop the task
+    time_nuke_tasks[guild_id].cancel()
+    del time_nuke_tasks[guild_id]
+
+    embed = discord.Embed(
+        title='✅ 定期ヌーク停止',
+        description='定期ヌークが停止されました。',
+        color=0x00ff00
+    )
+    await interaction.response.send_message(embed=embed)
+
+# Warning system
+def get_user_warnings(user_id, guild_id):
+    """Get user warning count"""
+    data = load_data()
+    if 'warnings' not in data:
+        data['warnings'] = {}
+    
+    guild_key = str(guild_id)
+    user_key = str(user_id)
+    
+    if guild_key not in data['warnings']:
+        data['warnings'][guild_key] = {}
+    
+    if user_key not in data['warnings'][guild_key]:
+        return 0
+    
+    return data['warnings'][guild_key][user_key]['count']
+
+def add_user_warning(user_id, guild_id, reason, moderator_id):
+    """Add warning to user"""
+    data = load_data()
+    if 'warnings' not in data:
+        data['warnings'] = {}
+    
+    guild_key = str(guild_id)
+    user_key = str(user_id)
+    
+    if guild_key not in data['warnings']:
+        data['warnings'][guild_key] = {}
+    
+    if user_key not in data['warnings'][guild_key]:
+        data['warnings'][guild_key][user_key] = {'count': 0, 'history': []}
+    
+    data['warnings'][guild_key][user_key]['count'] += 1
+    data['warnings'][guild_key][user_key]['history'].append({
+        'reason': reason,
+        'moderator_id': str(moderator_id),
+        'timestamp': datetime.now().isoformat()
+    })
+    
+    save_data(data)
+    return data['warnings'][guild_key][user_key]['count']
+
+@bot.tree.command(name='warn', description='ユーザーに警告を与える')
+async def warn_user(interaction: discord.Interaction, user: discord.Member, reason: str = "規則違反"):
+    if not is_allowed_server(interaction.guild.id):
+        await interaction.response.send_message('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
+        return
+
+    if not interaction.user.guild_permissions.manage_messages:
+        await interaction.response.send_message('❌ メッセージ管理権限が必要です。', ephemeral=True)
+        return
+
+    if user.guild_permissions.administrator:
+        await interaction.response.send_message('❌ 管理者に警告を与えることはできません。', ephemeral=True)
+        return
+
+    warning_count = add_user_warning(user.id, interaction.guild.id, reason, interaction.user.id)
+
+    embed = discord.Embed(
+        title='⚠️ 警告システム',
+        color=0xff9900
+    )
+    embed.add_field(name='対象ユーザー', value=user.mention, inline=True)
+    embed.add_field(name='警告回数', value=f'{warning_count}/3', inline=True)
+    embed.add_field(name='理由', value=reason, inline=False)
+    embed.add_field(name='モデレーター', value=interaction.user.mention, inline=True)
+
+    try:
+        if warning_count == 1:
+            # First warning - just warn
+            embed.add_field(name='措置', value='警告のみ', inline=False)
+            embed.set_footer(text='次回警告で1時間ミュート、3回目でBanとなります')
+            
+        elif warning_count == 2:
+            # Second warning - 1 hour timeout
+            from datetime import timedelta
+            timeout_duration = discord.utils.utcnow() + timedelta(hours=1)
+            await user.timeout(timeout_duration, reason=f"2回目の警告: {reason}")
+            embed.add_field(name='措置', value='1時間タイムアウト', inline=False)
+            embed.set_footer(text='次回警告でBanとなります')
+            
+        elif warning_count >= 3:
+            # Third warning - ban
+            await user.ban(reason=f"3回目の警告: {reason}")
+            embed.add_field(name='措置', value='サーバーからBan', inline=False)
+            embed.set_footer(text='規則違反により永久Ban')
+
+        await interaction.response.send_message(embed=embed)
+
+        # Send DM to user
+        try:
+            dm_embed = discord.Embed(
+                title=f'⚠️ {interaction.guild.name}で警告を受けました',
+                description=f'**理由:** {reason}\n**警告回数:** {warning_count}/3',
+                color=0xff9900
+            )
+            if warning_count == 1:
+                dm_embed.add_field(name='次回について', value='次回警告で1時間ミュート、3回目でBanとなります', inline=False)
+            elif warning_count == 2:
+                dm_embed.add_field(name='措置', value='1時間のタイムアウトが適用されました', inline=False)
+            elif warning_count >= 3:
+                dm_embed.add_field(name='措置', value='サーバーからBanされました', inline=False)
+            
+            await user.send(embed=dm_embed)
+        except:
+            pass
+
+    except discord.Forbidden:
+        await interaction.response.send_message('❌ ユーザーに措置を適用する権限がありません。', ephemeral=True)
+    except Exception as e:
+        await interaction.response.send_message(f'❌ エラーが発生しました: {str(e)}', ephemeral=True)
+
+@bot.tree.command(name='warnings', description='ユーザーの警告履歴を表示')
+async def show_warnings(interaction: discord.Interaction, user: discord.Member):
+    if not is_allowed_server(interaction.guild.id):
+        await interaction.response.send_message('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
+        return
+
+    if not interaction.user.guild_permissions.manage_messages:
+        await interaction.response.send_message('❌ メッセージ管理権限が必要です。', ephemeral=True)
+        return
+
+    data = load_data()
+    guild_key = str(interaction.guild.id)
+    user_key = str(user.id)
+
+    if ('warnings' not in data or guild_key not in data['warnings'] or 
+        user_key not in data['warnings'][guild_key]):
+        await interaction.response.send_message(f'❌ {user.display_name}の警告記録はありません。', ephemeral=True)
+        return
+
+    warning_data = data['warnings'][guild_key][user_key]
+    embed = discord.Embed(
+        title=f'⚠️ {user.display_name}の警告履歴',
+        description=f'**警告回数:** {warning_data["count"]}/3',
+        color=0xff9900
+    )
+
+    for i, warning in enumerate(warning_data['history'][-5:], 1):  # Show last 5 warnings
+        moderator = interaction.guild.get_member(int(warning['moderator_id']))
+        moderator_name = moderator.display_name if moderator else '不明'
+        
+        embed.add_field(
+            name=f'警告 #{i}',
+            value=f'**理由:** {warning["reason"]}\n**モデレーター:** {moderator_name}\n**日時:** {warning["timestamp"][:10]}',
+            inline=False
+        )
+
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+# Temporary mute command
+@bot.tree.command(name='tempmute', description='ユーザーを一時的にミュート')
+async def temp_mute(interaction: discord.Interaction, user: discord.Member, duration: str, reason: str = "規則違反"):
+    if not is_allowed_server(interaction.guild.id):
+        await interaction.response.send_message('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
+        return
+
+    if not interaction.user.guild_permissions.moderate_members:
+        await interaction.response.send_message('❌ メンバータイムアウト権限が必要です。', ephemeral=True)
+        return
+
+    if user.guild_permissions.administrator:
+        await interaction.response.send_message('❌ 管理者をミュートすることはできません。', ephemeral=True)
+        return
+
+    # Parse duration
+    try:
+        if duration.endswith('m'):
+            minutes = int(duration[:-1])
+            seconds = minutes * 60
+        elif duration.endswith('h'):
+            hours = int(duration[:-1])
+            seconds = hours * 3600
+        elif duration.endswith('d'):
+            days = int(duration[:-1])
+            seconds = days * 86400
+        else:
+            await interaction.response.send_message('❌ 時間形式が正しくありません。例: 30m, 2h, 1d', ephemeral=True)
+            return
+        
+        if seconds > 2419200:  # 28 days max
+            await interaction.response.send_message('❌ 最大ミュート期間は28日です。', ephemeral=True)
+            return
+            
+    except ValueError:
+        await interaction.response.send_message('❌ 時間形式が正しくありません。例: 30m, 2h, 1d', ephemeral=True)
+        return
+
+    try:
+        from datetime import timedelta
+        timeout_duration = discord.utils.utcnow() + timedelta(seconds=seconds)
+        await user.timeout(timeout_duration, reason=reason)
+
+        # Format duration display
+        if seconds >= 86400:
+            duration_display = f"{seconds // 86400}日"
+        elif seconds >= 3600:
+            duration_display = f"{seconds // 3600}時間"
+        else:
+            duration_display = f"{seconds // 60}分"
+
+        embed = discord.Embed(
+            title='🔇 一時ミュート適用',
+            color=0xff0000
+        )
+        embed.add_field(name='対象ユーザー', value=user.mention, inline=True)
+        embed.add_field(name='期間', value=duration_display, inline=True)
+        embed.add_field(name='理由', value=reason, inline=False)
+        embed.add_field(name='モデレーター', value=interaction.user.mention, inline=True)
+        embed.add_field(name='解除時刻', value=f'<t:{int(timeout_duration.timestamp())}:F>', inline=False)
+
+        await interaction.response.send_message(embed=embed)
+
+        # Send DM to user
+        try:
+            dm_embed = discord.Embed(
+                title=f'🔇 {interaction.guild.name}でミュートされました',
+                description=f'**期間:** {duration_display}\n**理由:** {reason}\n**解除時刻:** <t:{int(timeout_duration.timestamp())}:F>',
+                color=0xff0000
+            )
+            await user.send(embed=dm_embed)
+        except:
+            pass
+
+    except discord.Forbidden:
+        await interaction.response.send_message('❌ ユーザーをミュートする権限がありません。', ephemeral=True)
+    except Exception as e:
+        await interaction.response.send_message(f'❌ エラーが発生しました: {str(e)}', ephemeral=True)
+
+# Vending machine system
+class VendingMachineView(discord.ui.View):
+    def __init__(self, products):
+        super().__init__(timeout=None)
+        self.products = products
+        self.setup_buttons()
+
+    def setup_buttons(self):
+        for i, product in enumerate(self.products[:25]):  # Max 25 buttons
+            button = discord.ui.Button(
+                label=f"{product['name']} - ¥{product['price']}",
+                style=discord.ButtonStyle.primary,
+                custom_id=f"vending_{i}",
+                emoji="🛒"
+            )
+            button.callback = self.create_purchase_callback(i)
+            self.add_item(button)
+
+    def create_purchase_callback(self, product_index):
+        async def purchase_callback(interaction):
+            product = self.products[product_index]
+            
+            # Create payment confirmation view
+            payment_view = PaymentConfirmationView(product, interaction.user.id)
+            
+            embed = discord.Embed(
+                title='💳 お支払い確認',
+                description=f'**商品:** {product["name"]}\n**価格:** ¥{product["price"]}\n\n下のPayPayリンクから支払いを行い、完了後に「支払い完了」ボタンを押してください。',
+                color=0x00ff99
+            )
+            embed.add_field(
+                name='PayPayリンク',
+                value=f'[こちらから支払い]({product["paypay_link"]})',
+                inline=False
+            )
+            embed.set_footer(text='支払い後、管理者が確認して商品をお送りします')
+            
+            await interaction.response.send_message(embed=embed, view=payment_view, ephemeral=True)
+        
+        return purchase_callback
+
+class PaymentConfirmationView(discord.ui.View):
+    def __init__(self, product, user_id):
+        super().__init__(timeout=300)
+        self.product = product
+        self.user_id = user_id
+
+    @discord.ui.button(label='💰 支払い完了', style=discord.ButtonStyle.success, emoji='💰')
+    async def payment_completed(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Find admin confirmation channel
+        admin_channel = discord.utils.get(interaction.guild.text_channels, name="購入確認")
+        if not admin_channel:
+            # Try to create admin channel
+            try:
+                admin_channel = await interaction.guild.create_text_channel("購入確認")
+            except:
+                await interaction.response.send_message('❌ 管理者チャンネルが見つかりません。', ephemeral=True)
+                return
+
+        # Create admin confirmation view
+        admin_view = AdminConfirmationView(self.product, self.user_id, interaction.user)
+        
+        embed = discord.Embed(
+            title='🛒 購入確認が必要です',
+            description=f'**購入者:** {interaction.user.mention}\n**商品:** {self.product["name"]}\n**価格:** ¥{self.product["price"]}',
+            color=0xff9900
+        )
+        embed.add_field(
+            name='PayPayリンク',
+            value=f'[支払い確認]({self.product["paypay_link"]})',
+            inline=False
+        )
+        embed.set_footer(text='管理者は支払いを確認後、適切なボタンを押してください')
+        
+        await admin_channel.send(embed=embed, view=admin_view)
+        await interaction.response.send_message('✅ 支払い完了の報告を受け付けました。管理者が確認後、DMで商品をお送りします。', ephemeral=True)
+
+class AdminConfirmationView(discord.ui.View):
+    def __init__(self, product, user_id, user):
+        super().__init__(timeout=None)
+        self.product = product
+        self.user_id = user_id
+        self.user = user
+
+    @discord.ui.button(label='✅ 支払い確認済み', style=discord.ButtonStyle.success, emoji='✅')
+    async def confirm_payment(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message('❌ 管理者権限が必要です。', ephemeral=True)
+            return
+
+        # Send product to user via DM
+        try:
+            dm_embed = discord.Embed(
+                title='🎉 商品お渡し',
+                description=f'お買い上げありがとうございます！\n\n**商品:** {self.product["name"]}\n**内容:** {self.product["content"]}',
+                color=0x00ff00
+            )
+            dm_embed.set_footer(text=f'購入元: {interaction.guild.name}')
+            
+            await self.user.send(embed=dm_embed)
+            
+            # Update the admin message
+            embed = discord.Embed(
+                title='✅ 処理完了',
+                description=f'**購入者:** {self.user.mention}\n**商品:** {self.product["name"]}\n**処理者:** {interaction.user.mention}\n**処理日時:** <t:{int(datetime.now().timestamp())}:F>',
+                color=0x00ff00
+            )
+            
+            await interaction.response.edit_message(embed=embed, view=None)
+            
+        except discord.Forbidden:
+            await interaction.response.send_message('❌ ユーザーにDMを送信できませんでした。', ephemeral=True)
+
+    @discord.ui.button(label='❌ 支払い未確認', style=discord.ButtonStyle.danger, emoji='❌')
+    async def deny_payment(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message('❌ 管理者権限が必要です。', ephemeral=True)
+            return
+
+        # Notify user about payment issue
+        try:
+            dm_embed = discord.Embed(
+                title='❌ 支払い確認できませんでした',
+                description=f'申し訳ございませんが、以下の商品の支払いが確認できませんでした。\n\n**商品:** {self.product["name"]}\n**価格:** ¥{self.product["price"]}\n\nもう一度お支払いいただくか、サポートにお問い合わせください。',
+                color=0xff0000
+            )
+            
+            await self.user.send(embed=dm_embed)
+            
+            # Update the admin message
+            embed = discord.Embed(
+                title='❌ 支払い未確認',
+                description=f'**購入者:** {self.user.mention}\n**商品:** {self.product["name"]}\n**処理者:** {interaction.user.mention}\n**処理日時:** <t:{int(datetime.now().timestamp())}:F>',
+                color=0xff0000
+            )
+            
+            await interaction.response.edit_message(embed=embed, view=None)
+            
+        except discord.Forbidden:
+            await interaction.response.send_message('❌ ユーザーにDMを送信できませんでした。', ephemeral=True)
+
+@bot.tree.command(name='setup-vending', description='自動販売機を設置')
+async def setup_vending(interaction: discord.Interaction):
+    try:
+        await interaction.response.defer()
+        
+        if not is_allowed_server(interaction.guild.id):
+            await interaction.followup.send('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
+            return
+
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.followup.send('❌ 管理者権限が必要です。', ephemeral=True)
+            return
+
+        # Sample products (you can modify these)
+        products = [
+            {
+                "name": "デジタルコンテンツA",
+                "price": 1000,
+                "content": "特別なデジタルコンテンツをお渡しします。",
+                "paypay_link": "https://pay.paypay.ne.jp/example1"
+            },
+            {
+                "name": "プレミアムサービス",
+                "price": 2500,
+                "content": "プレミアムサービス1ヶ月分のアクセス権をお渡しします。",
+                "paypay_link": "https://pay.paypay.ne.jp/example2"
+            },
+            {
+                "name": "限定アイテム",
+                "price": 500,
+                "content": "限定アイテムをお渡しします。",
+                "paypay_link": "https://pay.paypay.ne.jp/example3"
+            }
+        ]
+
+        embed = discord.Embed(
+            title='🏪 自動販売機',
+            description='購入したい商品のボタンをクリックしてください。\n\n**購入の流れ:**\n1. 商品ボタンをクリック\n2. PayPayリンクから支払い\n3. 「支払い完了」ボタンを押す\n4. 管理者確認後、DMで商品お渡し',
+            color=0x00ff99
+        )
+        
+        for product in products:
+            embed.add_field(
+                name=f'🛒 {product["name"]}',
+                value=f'**価格:** ¥{product["price"]}\n{product["content"][:50]}...',
+                inline=True
+            )
+        
+        embed.set_footer(text='PayPay支払い対応 | 24時間自動対応')
+        
+        view = VendingMachineView(products)
+        await interaction.followup.send(embed=embed, view=view)
+        
+    except Exception as e:
+        print(f"Error in setup-vending command: {e}")
+        try:
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f'❌ エラーが発生しました: {str(e)}', ephemeral=True)
+            else:
+                await interaction.followup.send(f'❌ エラーが発生しました: {str(e)}', ephemeral=True)
+        except:
+            pass
+
+# Support system
+class SupportResponseView(discord.ui.View):
+    def __init__(self, request_user, request_content):
+        super().__init__(timeout=300)
+        self.request_user = request_user
+        self.request_content = request_content
+
+    @discord.ui.button(label='✅ 対応可能', style=discord.ButtonStyle.success, emoji='✅')
+    async def support_available(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not interaction.user.guild_permissions.manage_messages:
+            await interaction.response.send_message('❌ サポート対応権限がありません。', ephemeral=True)
+            return
+
+        # Notify the user
+        try:
+            dm_embed = discord.Embed(
+                title='✅ サポート対応開始',
+                description=f'あなたのサポート要請に {interaction.user.display_name} が対応します。\n\n**要請内容:** {self.request_content}',
+                color=0x00ff00
+            )
+            dm_embed.set_footer(text=f'サポーター: {interaction.user.display_name} | {interaction.guild.name}')
+            
+            await self.request_user.send(embed=dm_embed)
+            
+            # Update the support message
+            embed = discord.Embed(
+                title='✅ サポート対応中',
+                description=f'**要請者:** {self.request_user.mention}\n**対応者:** {interaction.user.mention}\n**内容:** {self.request_content}',
+                color=0x00ff00
+            )
+            embed.add_field(name='対応開始', value=f'<t:{int(datetime.now().timestamp())}:F>', inline=False)
+            
+            await interaction.response.edit_message(embed=embed, view=None)
+            
+        except discord.Forbidden:
+            await interaction.response.send_message('❌ ユーザーにDMを送信できませんでした。', ephemeral=True)
+
+    @discord.ui.button(label='❌ 対応不可', style=discord.ButtonStyle.danger, emoji='❌')
+    async def support_unavailable(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not interaction.user.guild_permissions.manage_messages:
+            await interaction.response.send_message('❌ サポート対応権限がありません。', ephemeral=True)
+            return
+
+        # Update the support message
+        embed = discord.Embed(
+            title='❌ サポート対応不可',
+            description=f'**要請者:** {self.request_user.mention}\n**内容:** {self.request_content}\n\n{interaction.user.mention} は現在対応できません。',
+            color=0xff0000
+        )
+        embed.add_field(name='対応不可通知', value=f'<t:{int(datetime.now().timestamp())}:F>', inline=False)
+        
+        await interaction.response.edit_message(embed=embed, view=self)
+
+@bot.tree.command(name='support-request', description='サポートを要請')
+async def support_request(interaction: discord.Interaction, content: str):
+    if not is_allowed_server(interaction.guild.id):
+        await interaction.response.send_message('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
+        return
+
+    # Find or create support channel
+    support_channel = discord.utils.get(interaction.guild.text_channels, name="サポート要請")
+    if not support_channel:
+        try:
+            support_channel = await interaction.guild.create_text_channel("サポート要請")
+        except:
+            await interaction.response.send_message('❌ サポートチャンネルを作成できませんでした。', ephemeral=True)
+            return
+
+    # Create support request embed
+    embed = discord.Embed(
+        title='🆘 サポート要請',
+        description=f'**要請者:** {interaction.user.mention}\n**内容:** {content}',
+        color=0xff9900
+    )
+    embed.add_field(name='要請日時', value=f'<t:{int(datetime.now().timestamp())}:F>', inline=False)
+    embed.set_footer(text='管理者は対応可能かどうかボタンで応答してください')
+
+    view = SupportResponseView(interaction.user, content)
+    await support_channel.send(embed=embed, view=view)
+    
+    await interaction.response.send_message('✅ サポート要請を送信しました。対応者が決まり次第、DMでご連絡します。', ephemeral=True)
+
+# Add to help system
+COMMAND_HELP.update({
+    'warn': {
+        'description': 'ユーザーに警告を与える',
+        'usage': '/warn <ユーザー> [理由]',
+        'details': '段階的警告システム。1回目は警告のみ、2回目で1時間ミュート、3回目でBanとなります。メッセージ管理権限が必要です。'
+    },
+    'warnings': {
+        'description': 'ユーザーの警告履歴を表示',
+        'usage': '/warnings <ユーザー>',
+        'details': '指定したユーザーの警告履歴と回数を表示します。メッセージ管理権限が必要です。'
+    },
+    'tempmute': {
+        'description': 'ユーザーを一時的にミュート',
+        'usage': '/tempmute <ユーザー> <期間> [理由]',
+        'details': '指定した期間ユーザーをミュートします。期間は30m（分）、2h（時間）、1d（日）の形式で指定。最大28日まで。メンバータイムアウト権限が必要です。'
+    },
+    'setup-vending': {
+        'description': '自動販売機を設置',
+        'usage': '/setup-vending',
+        'details': 'PayPayリンク付きの自動販売機を設置します。購入フローは自動化され、管理者確認後にDMで商品をお渡しします。管理者権限が必要です。'
+    },
+    'support-request': {
+        'description': 'サポートを要請',
+        'usage': '/support-request <内容>',
+        'details': 'サポートを要請します。管理者が対応可能かどうか応答し、対応者が決まったらDMで連絡されます。'
+    }
+})
 
 # Run the application
 if __name__ == '__main__':
