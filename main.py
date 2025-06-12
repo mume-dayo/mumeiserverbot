@@ -6,6 +6,8 @@ from datetime import datetime
 from flask import Flask
 from threading import Thread
 import time
+import g4f
+import asyncio
 
 # Flask app for Render health check
 app = Flask(__name__)
@@ -172,22 +174,25 @@ async def on_message(message):
                     print(f"Identical message spam detected from {message.author.name} (ID: {user_id})")
                     print(f"Repeated message: {message.content[:50]}...")
 
-                    # Delete all identical messages in the channel from this user
+                    # Delete only the consecutive identical messages (last 3)
                     messages_to_delete = []
-                    async for msg in message.channel.history(limit=50):
+                    async for msg in message.channel.history(limit=10):
                         if (msg.author.id == user_id and 
                             msg.content == message.content and
                             current_time - msg.created_at.timestamp() <= 30):
                             messages_to_delete.append(msg)
+                            # Only delete the last 3 identical messages
+                            if len(messages_to_delete) >= 3:
+                                break
                     
-                    # Delete all found identical messages
-                    for msg in messages_to_delete:
+                    # Delete only the 3 most recent identical messages
+                    for msg in messages_to_delete[:3]:
                         try:
                             await msg.delete()
                         except:
                             pass
 
-                    print(f"Deleted {len(messages_to_delete)} identical messages")
+                    print(f"Deleted {min(len(messages_to_delete), 3)} consecutive identical messages")
 
                     # 3+ identical messages: 1 hour timeout
                     from datetime import timedelta
@@ -1524,6 +1529,177 @@ async def server_log_status(interaction: discord.Interaction):
 
 
 
+# ChatGPT conversation using g4f
+@bot.tree.command(name='chatgpt', description='ChatGPTと会話する')
+async def chatgpt_command(interaction: discord.Interaction, message: str):
+    if not is_allowed_server(interaction.guild.id):
+        await interaction.response.send_message('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
+        return
+
+    # Defer the response since AI might take some time
+    await interaction.response.defer()
+
+    try:
+        # Create a response using g4f
+        response = await asyncio.to_thread(
+            g4f.ChatCompletion.create,
+            model=g4f.models.gpt_35_turbo,
+            messages=[{"role": "user", "content": message}],
+            provider=g4f.Provider.Bing
+        )
+
+        # Create embed for the response
+        embed = discord.Embed(
+            title='🤖 ChatGPT 応答',
+            description=response,
+            color=0x00ff99
+        )
+        embed.add_field(
+            name='📝 質問',
+            value=message,
+            inline=False
+        )
+        embed.set_footer(text=f'質問者: {interaction.user.display_name}')
+
+        # Send the response
+        await interaction.followup.send(embed=embed)
+
+        # Add experience for using ChatGPT
+        add_experience(interaction.user.id, interaction.guild.id, 15)
+
+    except Exception as e:
+        error_embed = discord.Embed(
+            title='❌ エラー',
+            description=f'ChatGPTとの会話中にエラーが発生しました: {str(e)}',
+            color=0xff0000
+        )
+        await interaction.followup.send(embed=error_embed, ephemeral=True)
+
+# Advanced ChatGPT conversation with context
+conversation_contexts = {}  # {user_id: [{"role": "user/assistant", "content": "message"}]}
+
+@bot.tree.command(name='chat', description='ChatGPTと継続的な会話をする（会話の文脈を保持）')
+async def chat_command(interaction: discord.Interaction, message: str, reset_context: bool = False):
+    if not is_allowed_server(interaction.guild.id):
+        await interaction.response.send_message('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
+        return
+
+    await interaction.response.defer()
+
+    user_id = interaction.user.id
+
+    # Reset context if requested
+    if reset_context:
+        conversation_contexts[user_id] = []
+        await interaction.followup.send('✅ 会話の文脈をリセットしました。', ephemeral=True)
+        return
+
+    # Initialize context for new users
+    if user_id not in conversation_contexts:
+        conversation_contexts[user_id] = []
+
+    # Add user message to context
+    conversation_contexts[user_id].append({"role": "user", "content": message})
+
+    # Keep only last 10 messages to prevent context overflow
+    if len(conversation_contexts[user_id]) > 10:
+        conversation_contexts[user_id] = conversation_contexts[user_id][-10:]
+
+    try:
+        # Prepare messages for ChatGPT
+        messages = [
+            {"role": "system", "content": "あなたは親切で知識豊富なアシスタントです。日本語で回答してください。"}
+        ] + conversation_contexts[user_id]
+
+        # Get response from ChatGPT
+        response = await asyncio.to_thread(
+            g4f.ChatCompletion.create,
+            model=g4f.models.gpt_35_turbo,
+            messages=messages,
+            provider=g4f.Provider.Bing
+        )
+
+        # Add assistant response to context
+        conversation_contexts[user_id].append({"role": "assistant", "content": response})
+
+        # Create embed for the response
+        embed = discord.Embed(
+            title='💬 ChatGPT 会話',
+            description=response,
+            color=0x0099ff
+        )
+        embed.add_field(
+            name='💭 あなたの質問',
+            value=message,
+            inline=False
+        )
+        embed.add_field(
+            name='📊 会話ターン数',
+            value=f'{len(conversation_contexts[user_id])//2}回',
+            inline=True
+        )
+        embed.set_footer(text=f'文脈をリセット: /chat reset_context:True | 質問者: {interaction.user.display_name}')
+
+        await interaction.followup.send(embed=embed)
+
+        # Add experience for conversation
+        add_experience(interaction.user.id, interaction.guild.id, 20)
+
+    except Exception as e:
+        error_embed = discord.Embed(
+            title='❌ エラー',
+            description=f'ChatGPTとの会話中にエラーが発生しました: {str(e)}',
+            color=0xff0000
+        )
+        await interaction.followup.send(embed=error_embed, ephemeral=True)
+
+@bot.tree.command(name='ai-translate', description='テキストを他の言語に翻訳')
+async def ai_translate_command(interaction: discord.Interaction, text: str, target_language: str = "English"):
+    if not is_allowed_server(interaction.guild.id):
+        await interaction.response.send_message('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
+        return
+
+    await interaction.response.defer()
+
+    try:
+        prompt = f"Translate the following text to {target_language}. Only provide the translation, no explanations:\n\n{text}"
+        
+        response = await asyncio.to_thread(
+            g4f.ChatCompletion.create,
+            model=g4f.models.gpt_35_turbo,
+            messages=[{"role": "user", "content": prompt}],
+            provider=g4f.Provider.Bing
+        )
+
+        embed = discord.Embed(
+            title='🌐 AI翻訳',
+            color=0x00ff99
+        )
+        embed.add_field(
+            name='📝 原文',
+            value=text[:1000] + ('...' if len(text) > 1000 else ''),
+            inline=False
+        )
+        embed.add_field(
+            name=f'🔄 翻訳結果 ({target_language})',
+            value=response[:1000] + ('...' if len(response) > 1000 else ''),
+            inline=False
+        )
+        embed.set_footer(text=f'翻訳者: {interaction.user.display_name}')
+
+        await interaction.followup.send(embed=embed)
+
+        # Add experience for translation
+        add_experience(interaction.user.id, interaction.guild.id, 10)
+
+    except Exception as e:
+        error_embed = discord.Embed(
+            title='❌ 翻訳エラー',
+            description=f'翻訳中にエラーが発生しました: {str(e)}',
+            color=0xff0000
+        )
+        await interaction.followup.send(embed=error_embed, ephemeral=True)
+
 # Help system
 COMMAND_HELP = {
     'nuke': {
@@ -1628,6 +1804,21 @@ COMMAND_HELP = {
         'description': 'サーバーのレベルランキングを表示',
         'usage': '/ranking',
         'details': 'サーバー内のユーザーのレベルランキングを表示します。上位10名まで表示されます。'
+    },
+    'chatgpt': {
+        'description': 'ChatGPTと会話する',
+        'usage': '/chatgpt <メッセージ>',
+        'details': 'ChatGPTと単発の会話をします。質問や依頼を送信すると、AIが応答します。使用で15XPを獲得できます。'
+    },
+    'chat': {
+        'description': 'ChatGPTと継続的な会話をする（会話の文脈を保持）',
+        'usage': '/chat <メッセージ> [reset_context:True]',
+        'details': 'ChatGPTと継続的な会話をします。過去の会話内容を覚えているため、より自然な対話が可能です。reset_context:Trueで会話履歴をリセットできます。使用で20XPを獲得できます。'
+    },
+    'ai-translate': {
+        'description': 'テキストを他の言語に翻訳',
+        'usage': '/ai-translate <テキスト> [target_language:言語名]',
+        'details': 'AIを使用してテキストを他の言語に翻訳します。target_languageを省略するとEnglishに翻訳されます。使用で10XPを獲得できます。'
     }
 }
 
