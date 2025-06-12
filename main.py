@@ -75,9 +75,17 @@ async def on_ready():
     load_meigen_config()
     
     # Start meigen tasks for configured channels
-    for guild_id, channel_id in meigen_channels.items():
+    for guild_id, config in meigen_channels.items():
         if guild_id not in meigen_tasks:
-            task = asyncio.create_task(send_daily_meigen(guild_id, channel_id))
+            if isinstance(config, dict):
+                # New format with interval
+                channel_id = config["channel_id"]
+                interval = config["interval"]
+                task = asyncio.create_task(send_interval_meigen(guild_id, channel_id, interval))
+            else:
+                # Old format (backward compatibility)
+                channel_id = config
+                task = asyncio.create_task(send_daily_meigen(guild_id, channel_id))
             meigen_tasks[guild_id] = task
     try:
         synced = await bot.tree.sync()
@@ -1606,6 +1614,45 @@ async def send_daily_meigen(guild_id, channel_id):
             print(f"Error sending daily meigen: {e}")
             break
 
+async def send_interval_meigen(guild_id, channel_id, interval_seconds):
+    """Send random quote at specified intervals"""
+    while True:
+        await asyncio.sleep(interval_seconds)
+        
+        try:
+            guild = bot.get_guild(int(guild_id))
+            if not guild:
+                break
+                
+            channel = guild.get_channel(int(channel_id))
+            if not channel:
+                break
+            
+            # Select random quote
+            quote = random.choice(MEIGEN_QUOTES)
+            
+            # Format interval display
+            if interval_seconds >= 3600:
+                interval_display = f"{interval_seconds // 3600}時間"
+            elif interval_seconds >= 60:
+                interval_display = f"{interval_seconds // 60}分"
+            else:
+                interval_display = f"{interval_seconds}秒"
+            
+            embed = discord.Embed(
+                title="📜 定期名言",
+                description=quote,
+                color=0xffd700
+            )
+            embed.set_footer(text=f"{interval_display}間隔で配信されます")
+            
+            await channel.send(embed=embed)
+            print(f"Sent interval meigen to {guild.name}#{channel.name} (interval: {interval_seconds}s)")
+            
+        except Exception as e:
+            print(f"Error sending interval meigen: {e}")
+            break
+
 # Delete command
 @bot.tree.command(name='delete', description='指定した数のメッセージを削除')
 async def delete_messages(interaction: discord.Interaction, count: int, user: discord.Member = None):
@@ -1652,8 +1699,8 @@ async def delete_messages(interaction: discord.Interaction, count: int, user: di
         await interaction.followup.send(f'❌ メッセージの削除中にエラーが発生しました: {str(e)}', ephemeral=True)
 
 # Meigen channel setting command
-@bot.tree.command(name='meigen_channel_setting', description='名言を毎日送信するチャンネルを設定')
-async def meigen_channel_setting(interaction: discord.Interaction):
+@bot.tree.command(name='meigen_channel_setting', description='名言を指定間隔で送信するチャンネルを設定')
+async def meigen_channel_setting(interaction: discord.Interaction, interval: str = "1h"):
     if not is_allowed_server(interaction.guild.id):
         await interaction.response.send_message('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
         return
@@ -1662,24 +1709,53 @@ async def meigen_channel_setting(interaction: discord.Interaction):
         await interaction.response.send_message('❌ サーバー管理権限が必要です。', ephemeral=True)
         return
 
+    # Parse interval
+    try:
+        if interval.endswith('s'):
+            seconds = int(interval[:-1])
+            if seconds < 60:
+                await interaction.response.send_message('❌ 最小間隔は60秒です。', ephemeral=True)
+                return
+        elif interval.endswith('m'):
+            seconds = int(interval[:-1]) * 60
+            if seconds < 60:
+                await interaction.response.send_message('❌ 最小間隔は1分です。', ephemeral=True)
+                return
+        elif interval.endswith('h'):
+            seconds = int(interval[:-1]) * 3600
+        else:
+            await interaction.response.send_message('❌ 時間形式が正しくありません。例: 30s, 5m, 2h', ephemeral=True)
+            return
+    except ValueError:
+        await interaction.response.send_message('❌ 時間形式が正しくありません。例: 30s, 5m, 2h', ephemeral=True)
+        return
+
     guild_id = str(interaction.guild.id)
     channel_id = str(interaction.channel.id)
 
-    # Save configuration
-    meigen_channels[guild_id] = channel_id
+    # Save configuration with interval
+    meigen_channels[guild_id] = {"channel_id": channel_id, "interval": seconds}
     save_meigen_config()
 
     # Stop existing task if any
     if guild_id in meigen_tasks:
         meigen_tasks[guild_id].cancel()
 
-    # Start new task
-    task = asyncio.create_task(send_daily_meigen(guild_id, channel_id))
+    # Start new task with specified interval
+    task = asyncio.create_task(send_interval_meigen(guild_id, channel_id, seconds))
     meigen_tasks[guild_id] = task
+
+    # Format interval display
+    if seconds >= 3600:
+        interval_display = f"{seconds // 3600}時間"
+    elif seconds >= 60:
+        interval_display = f"{seconds // 60}分"
+    else:
+        interval_display = f"{seconds}秒"
 
     embed = discord.Embed(
         title='✅ 名言チャンネル設定完了',
-        description=f'このチャンネル（{interaction.channel.mention}）に毎日ランダムな時間に名言を送信します。',
+        description=f'このチャンネル（{interaction.channel.mention}）に{interval_display}間隔で名言を送信します。',
         color=0x00ff00
     )
     embed.add_field(
@@ -1688,8 +1764,8 @@ async def meigen_channel_setting(interaction: discord.Interaction):
         inline=False
     )
     embed.add_field(
-        name='⏰ 配信時間',
-        value='毎日ランダムな時間（1-24時間の間隔）',
+        name='⏰ 配信間隔',
+        value=f'{interval_display}ごと',
         inline=False
     )
     embed.set_footer(text='設定を変更するには再度このコマンドを実行してください')
@@ -1807,9 +1883,9 @@ COMMAND_HELP = {
         'details': '指定した数のメッセージを削除します。ユーザーを指定すると、そのユーザーのメッセージのみを削除します。1-100件まで指定可能です。メッセージ管理権限が必要です。'
     },
     'meigen_channel_setting': {
-        'description': '名言を毎日送信するチャンネルを設定',
-        'usage': '/meigen_channel_setting',
-        'details': '実行したチャンネルに毎日ランダムな時間（1-24時間間隔）で有名人の名言を送信するように設定します。サーバー管理権限が必要です。'
+        'description': '名言を指定間隔で送信するチャンネルを設定',
+        'usage': '/meigen_channel_setting [間隔]',
+        'details': '実行したチャンネルに指定した間隔で有名人の名言を送信するように設定します。間隔は30s（秒）、5m（分）、2h（時間）の形式で指定できます。省略時は1時間間隔です。最小間隔は60秒です。サーバー管理権限が必要です。'
     }
 }
 
