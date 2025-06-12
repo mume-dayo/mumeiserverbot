@@ -72,6 +72,13 @@ async def on_ready():
     # Load configurations
     load_translation_config()
     load_server_log_config()
+    load_meigen_config()
+    
+    # Start meigen tasks for configured channels
+    for guild_id, channel_id in meigen_channels.items():
+        if guild_id not in meigen_tasks:
+            task = asyncio.create_task(send_daily_meigen(guild_id, channel_id))
+            meigen_tasks[guild_id] = task
     try:
         synced = await bot.tree.sync()
         print(f'Synced {len(synced)} command(s)')
@@ -1527,6 +1534,168 @@ async def server_log_status(interaction: discord.Interaction):
 
 
 
+# Random quotes system
+import random
+import asyncio
+from datetime import datetime, timedelta
+
+MEIGEN_QUOTES = [
+    "トーマス・エジソン\n「向こうはとても美しいよ。」",
+    "アイザック・ニュートン\n「私はただ、海辺で貝殻を拾って遊んでいた子どもにすぎない。」",
+    "チャールズ・ダーウィン\n「私は死ぬのを恐れてはいない。」",
+    "ハンフリー・ボガート（俳優）\n「俺の人生で唯一の後悔は、スコッチではなくマティーニを飲んでいたことだ。」",
+    "ボブ・マーリー\n「金は命を買えない。」",
+    "スティーブ・ジョブズ（公式な最期の言葉かは不明）\n「Oh wow. Oh wow. Oh wow.」",
+    "フランツ・カフカ\n「殺さないでくれ。僕はまだ生きていたい。」",
+    "エドガー・アラン・ポー\n「主よ、私の哀れな魂を救いたまえ！」",
+    "ルートヴィヒ・ヴァン・ベートーヴェン\n「諸君、喝采せよ。喜劇は終わった。」"
+]
+
+meigen_channels = {}  # {guild_id: channel_id}
+meigen_tasks = {}  # {guild_id: task}
+
+def save_meigen_config():
+    """Save meigen channel configuration"""
+    try:
+        with open('meigen_config.json', 'w', encoding='utf-8') as f:
+            json.dump(meigen_channels, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"Error saving meigen config: {e}")
+
+def load_meigen_config():
+    """Load meigen channel configuration"""
+    global meigen_channels
+    try:
+        if os.path.exists('meigen_config.json'):
+            with open('meigen_config.json', 'r', encoding='utf-8') as f:
+                meigen_channels = json.load(f)
+    except Exception as e:
+        print(f"Error loading meigen config: {e}")
+        meigen_channels = {}
+
+async def send_daily_meigen(guild_id, channel_id):
+    """Send random quote at random time daily"""
+    while True:
+        # Wait for random time between 1-24 hours
+        random_hours = random.uniform(1, 24)
+        await asyncio.sleep(random_hours * 3600)
+        
+        try:
+            guild = bot.get_guild(int(guild_id))
+            if not guild:
+                break
+                
+            channel = guild.get_channel(int(channel_id))
+            if not channel:
+                break
+            
+            # Select random quote
+            quote = random.choice(MEIGEN_QUOTES)
+            
+            embed = discord.Embed(
+                title="📜 今日の名言",
+                description=quote,
+                color=0xffd700
+            )
+            embed.set_footer(text="一日一回、ランダムな時間に配信されます")
+            
+            await channel.send(embed=embed)
+            print(f"Sent daily meigen to {guild.name}#{channel.name}")
+            
+        except Exception as e:
+            print(f"Error sending daily meigen: {e}")
+            break
+
+# Delete command
+@bot.tree.command(name='delete', description='指定した数のメッセージを削除')
+async def delete_messages(interaction: discord.Interaction, count: int, user: discord.Member = None):
+    if not is_allowed_server(interaction.guild.id):
+        await interaction.response.send_message('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
+        return
+
+    if not interaction.user.guild_permissions.manage_messages:
+        await interaction.response.send_message('❌ メッセージ管理権限が必要です。', ephemeral=True)
+        return
+
+    if count <= 0 or count > 100:
+        await interaction.response.send_message('❌ 削除するメッセージ数は1-100の間で指定してください。', ephemeral=True)
+        return
+
+    await interaction.response.defer(ephemeral=True)
+
+    try:
+        if user:
+            # Delete messages from specific user
+            deleted = 0
+            async for message in interaction.channel.history(limit=200):
+                if message.author == user and deleted < count:
+                    await message.delete()
+                    deleted += 1
+                    await asyncio.sleep(0.5)  # Rate limit protection
+            
+            await interaction.followup.send(f'✅ {user.display_name}のメッセージを{deleted}件削除しました。', ephemeral=True)
+        else:
+            # Delete latest messages
+            messages = []
+            async for message in interaction.channel.history(limit=count):
+                messages.append(message)
+            
+            if messages:
+                await interaction.channel.delete_messages(messages)
+                await interaction.followup.send(f'✅ {len(messages)}件のメッセージを削除しました。', ephemeral=True)
+            else:
+                await interaction.followup.send('❌ 削除するメッセージが見つかりません。', ephemeral=True)
+
+    except discord.Forbidden:
+        await interaction.followup.send('❌ メッセージを削除する権限がありません。', ephemeral=True)
+    except Exception as e:
+        await interaction.followup.send(f'❌ メッセージの削除中にエラーが発生しました: {str(e)}', ephemeral=True)
+
+# Meigen channel setting command
+@bot.tree.command(name='meigen_channel_setting', description='名言を毎日送信するチャンネルを設定')
+async def meigen_channel_setting(interaction: discord.Interaction):
+    if not is_allowed_server(interaction.guild.id):
+        await interaction.response.send_message('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
+        return
+
+    if not interaction.user.guild_permissions.manage_guild:
+        await interaction.response.send_message('❌ サーバー管理権限が必要です。', ephemeral=True)
+        return
+
+    guild_id = str(interaction.guild.id)
+    channel_id = str(interaction.channel.id)
+
+    # Save configuration
+    meigen_channels[guild_id] = channel_id
+    save_meigen_config()
+
+    # Stop existing task if any
+    if guild_id in meigen_tasks:
+        meigen_tasks[guild_id].cancel()
+
+    # Start new task
+    task = asyncio.create_task(send_daily_meigen(guild_id, channel_id))
+    meigen_tasks[guild_id] = task
+
+    embed = discord.Embed(
+        title='✅ 名言チャンネル設定完了',
+        description=f'このチャンネル（{interaction.channel.mention}）に毎日ランダムな時間に名言を送信します。',
+        color=0x00ff00
+    )
+    embed.add_field(
+        name='📜 配信内容',
+        value='有名人の名言をランダムに配信します',
+        inline=False
+    )
+    embed.add_field(
+        name='⏰ 配信時間',
+        value='毎日ランダムな時間（1-24時間の間隔）',
+        inline=False
+    )
+    embed.set_footer(text='設定を変更するには再度このコマンドを実行してください')
+
+    await interaction.response.send_message(embed=embed)
+
 # Help system
 COMMAND_HELP = {
     'nuke': {
@@ -1631,6 +1800,16 @@ COMMAND_HELP = {
         'description': 'サーバーのレベルランキングを表示',
         'usage': '/ranking',
         'details': 'サーバー内のユーザーのレベルランキングを表示します。上位10名まで表示されます。'
+    },
+    'delete': {
+        'description': '指定した数のメッセージを削除',
+        'usage': '/delete <メッセージ数> [ユーザー]',
+        'details': '指定した数のメッセージを削除します。ユーザーを指定すると、そのユーザーのメッセージのみを削除します。1-100件まで指定可能です。メッセージ管理権限が必要です。'
+    },
+    'meigen_channel_setting': {
+        'description': '名言を毎日送信するチャンネルを設定',
+        'usage': '/meigen_channel_setting',
+        'details': '実行したチャンネルに毎日ランダムな時間（1-24時間間隔）で有名人の名言を送信するように設定します。サーバー管理権限が必要です。'
     }
 }
 
