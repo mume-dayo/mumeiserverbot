@@ -1543,9 +1543,8 @@ async def chatgpt_command(interaction: discord.Interaction, message: str):
         # Create a response using g4f
         response = await asyncio.to_thread(
             g4f.ChatCompletion.create,
-            model=g4f.models.gpt_35_turbo,
-            messages=[{"role": "user", "content": message}],
-            provider=g4f.Provider.Bing
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": message}]
         )
 
         # Create embed for the response
@@ -1614,9 +1613,8 @@ async def chat_command(interaction: discord.Interaction, message: str, reset_con
         # Get response from ChatGPT
         response = await asyncio.to_thread(
             g4f.ChatCompletion.create,
-            model=g4f.models.gpt_35_turbo,
-            messages=messages,
-            provider=g4f.Provider.Bing
+            model="gpt-3.5-turbo",
+            messages=messages
         )
 
         # Add assistant response to context
@@ -1666,9 +1664,8 @@ async def ai_translate_command(interaction: discord.Interaction, text: str, targ
         
         response = await asyncio.to_thread(
             g4f.ChatCompletion.create,
-            model=g4f.models.gpt_35_turbo,
-            messages=[{"role": "user", "content": prompt}],
-            provider=g4f.Provider.Bing
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": prompt}]
         )
 
         embed = discord.Embed(
