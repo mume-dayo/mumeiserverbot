@@ -819,7 +819,8 @@ async def giveaway(interaction: discord.Interaction, prize: str):
     except Exception as e:
         print(f"Error in giveaway command: {e}")
         try:
-            if not interaction.response.is_done():
+            if not```python
+ interaction.response.is_done():
                 await interaction.response.send_message(f'❌ エラーが発生しました: {str(e)}', ephemeral=True)
             else:
                 await interaction.followup.send(f'❌ エラーが発生しました: {str(e)}', ephemeral=True)
@@ -1527,8 +1528,6 @@ async def server_log_status(interaction: discord.Interaction):
 
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
-
-
 # ChatGPT conversation using g4f
 @bot.tree.command(name='chatgpt', description='ChatGPTと会話する')
 async def chatgpt_command(interaction: discord.Interaction, message: str):
@@ -1537,13 +1536,18 @@ async def chatgpt_command(interaction: discord.Interaction, message: str):
         return
 
     # Defer the response since AI might take some time
-    await interaction.response.defer()
+    try:
+        await interaction.response.defer()
+    except discord.errors.NotFound:
+        # If interaction has expired, send a normal messageto the channel
+        await interaction.channel.send('⏰ 処理に時間がかかっています。もう一度お試しください。')
+        return
 
     try:
         # Create a response using g4f
         response = await asyncio.to_thread(
             g4f.ChatCompletion.create,
-            model="gpt-3.5-turbo",
+            model=g4f.models.default,
             messages=[{"role": "user", "content": message}]
         )
 
@@ -1561,7 +1565,11 @@ async def chatgpt_command(interaction: discord.Interaction, message: str):
         embed.set_footer(text=f'質問者: {interaction.user.display_name}')
 
         # Send the response
-        await interaction.followup.send(embed=embed)
+        try:
+            await interaction.followup.send(embed=embed)
+        except discord.errors.NotFound:
+            # If interaction has expired, send to channel instead
+            await interaction.channel.send(embed=embed)
 
         # Add experience for using ChatGPT
         add_experience(interaction.user.id, interaction.guild.id, 15)
@@ -1569,14 +1577,14 @@ async def chatgpt_command(interaction: discord.Interaction, message: str):
     except Exception as e:
         print(f"ChatGPT error: {e}")
         error_embed = discord.Embed(
-            title='❌ エラー',
-            description='ChatGPTサービスが一時的に利用できません。しばらく後にもう一度お試しください。',
+            title='❌ ChatGPTとの会話中にエラーが発生しました',
+            description=f'エラー詳細: {str(e)}',
             color=0xff0000
         )
         try:
             await interaction.followup.send(embed=error_embed, ephemeral=True)
-        except:
-            # If interaction has expired, try to send a normal message
+        except discord.errors.NotFound:
+            # If interaction has expired, send to channel instead
             await interaction.channel.send(embed=error_embed)
 
 # Advanced ChatGPT conversation with context
@@ -1588,14 +1596,20 @@ async def chat_command(interaction: discord.Interaction, message: str, reset_con
         await interaction.response.send_message('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
         return
 
-    await interaction.response.defer()
-
     user_id = interaction.user.id
 
     # Reset context if requested
     if reset_context:
         conversation_contexts[user_id] = []
-        await interaction.followup.send('✅ 会話の文脈をリセットしました。', ephemeral=True)
+        await interaction.response.send_message('✅ 会話の文脈をリセットしました。', ephemeral=True)
+        return
+
+    # Defer response immediately after permission check
+    try:
+        await interaction.response.defer()
+    except discord.errors.NotFound:
+        # If interaction has expired, send a normal message to the channel
+        await interaction.channel.send('⏰ 処理に時間がかかっています。もう一度お試しください。')
         return
 
     # Initialize context for new users
@@ -1618,7 +1632,7 @@ async def chat_command(interaction: discord.Interaction, message: str, reset_con
         # Get response from ChatGPT
         response = await asyncio.to_thread(
             g4f.ChatCompletion.create,
-            model="gpt-3.5-turbo",
+            model=g4f.models.default,
             messages=messages
         )
 
@@ -1643,7 +1657,11 @@ async def chat_command(interaction: discord.Interaction, message: str, reset_con
         )
         embed.set_footer(text=f'文脈をリセット: /chat reset_context:True | 質問者: {interaction.user.display_name}')
 
-        await interaction.followup.send(embed=embed)
+        try:
+            await interaction.followup.send(embed=embed)
+        except discord.errors.NotFound:
+            # If interaction has expired, send to channel instead
+            await interaction.channel.send(embed=embed)
 
         # Add experience for conversation
         add_experience(interaction.user.id, interaction.guild.id, 20)
@@ -1651,14 +1669,14 @@ async def chat_command(interaction: discord.Interaction, message: str, reset_con
     except Exception as e:
         print(f"Chat error: {e}")
         error_embed = discord.Embed(
-            title='❌ エラー',
-            description='ChatGPTサービスが一時的に利用できません。しばらく後にもう一度お試しください。',
+            title='❌ ChatGPTとの会話中にエラーが発生しました',
+            description=f'エラー詳細: {str(e)}',
             color=0xff0000
         )
         try:
             await interaction.followup.send(embed=error_embed, ephemeral=True)
-        except:
-            # If interaction has expired, try to send a normal message
+        except discord.errors.NotFound:
+            # If interaction has expired, send to channel instead
             await interaction.channel.send(embed=error_embed)
 
 @bot.tree.command(name='ai-translate', description='テキストを他の言語に翻訳')
@@ -1674,7 +1692,7 @@ async def ai_translate_command(interaction: discord.Interaction, text: str, targ
 
         response = await asyncio.to_thread(
             g4f.ChatCompletion.create,
-            model="gpt-3.5-turbo",
+            model=g4f.models.default,
             messages=[{"role": "user", "content": prompt}]
         )
 
