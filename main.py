@@ -7,7 +7,6 @@ from flask import Flask
 from threading import Thread
 import time
 
-# Flask app for Render health check
 app = Flask(__name__)
 
 @app.route('/')
@@ -19,27 +18,24 @@ def health():
     return {"status": "healthy", "bot": "running"}
 
 def run_flask():
-    """Run Flask server"""
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
 
-# Bot setup
 intents = discord.Intents.default()
-intents.message_content = True  # Required for anti-spam
-bot = commands.Bot(command_prefix='/', intents=intents)
+intents.message_content = True
+intents.members = True
+bot = commands.Bot(command_prefix='!', intents=intents)
 
-# Allowed server IDs
-ALLOWED_SERVERS = [1373116978709139577, 1382415420413313096]
+bot_start_time = datetime.now()
 
-# Anti-spam system
-spam_tracker = {}  # {user_id: [{'message': str, 'timestamp': float, 'channel_id': int}]}
-bot_spam_tracker = {}  # {user_id: {'count': int, 'last_timestamp': float}}
+ALLOWED_SERVERS = [1373116978709139577, 1383225206797242398]
 
-# Anti-spam tracking
-user_message_history = {}  # {user_id: [timestamp1, timestamp2, ...]}
-bot_message_count = {}     # {user_id: consecutive_bot_message_count}
+spam_tracker = {}
+bot_spam_tracker = {}
 
-# Data storage files
+user_message_history = {}
+bot_message_count = {}
+
 DATA_FILE = 'bot_data.json'
 
 def load_data():
@@ -58,35 +54,31 @@ def save_data(data):
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 def is_allowed_server(guild_id):
-    """Check if the server is allowed to use the bot"""
     return guild_id in ALLOWED_SERVERS
 
 @bot.event
 async def on_ready():
     print(f'{bot.user} has connected to Discord!')
 
-    # Set bot status/presence
-    activity = discord.Game(name="むめー専用botをプレイ中...")
+    server_count = len(bot.guilds)
+    activity = discord.Game(name=f"{server_count}サーバをプレイ中...")
     await bot.change_presence(status=discord.Status.online, activity=activity)
 
-    # Load configurations
     load_translation_config()
     load_server_log_config()
     load_meigen_config()
     
-    # Start meigen tasks for configured channels
     for guild_id, config in meigen_channels.items():
         if guild_id not in meigen_tasks:
             if isinstance(config, dict):
-                # New format with interval
                 channel_id = config["channel_id"]
                 interval = config["interval"]
                 task = asyncio.create_task(send_interval_meigen(guild_id, channel_id, interval))
             else:
-                # Old format (backward compatibility)
                 channel_id = config
                 task = asyncio.create_task(send_daily_meigen(guild_id, channel_id))
             meigen_tasks[guild_id] = task
+    
     try:
         synced = await bot.tree.sync()
         print(f'Synced {len(synced)} command(s)')
@@ -94,48 +86,49 @@ async def on_ready():
         print(f'Failed to sync commands: {e}')
 
 @bot.event
+async def on_guild_join(guild):
+    server_count = len(bot.guilds)
+    activity = discord.Game(name=f"{server_count}サーバをプレイ中...")
+    await bot.change_presence(status=discord.Status.online, activity=activity)
+    print(f"Joined guild: {guild.name} (ID: {guild.id}). Now in {server_count} servers.")
+
+@bot.event
+async def on_guild_remove(guild):
+    server_count = len(bot.guilds)
+    activity = discord.Game(name=f"{server_count}サーバをプレイ中...")
+    await bot.change_presence(status=discord.Status.online, activity=activity)
+    print(f"Left guild: {guild.name} (ID: {guild.id}). Now in {server_count} servers.")
+
+@bot.event
 async def on_message(message):
-    # Ignore bot's own messages
     if message.author == bot.user:
         return
 
-    # Check if server is allowed
     if not is_allowed_server(message.guild.id):
-        await interaction.response.send_message('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
         return
 
-    # Handle message copying first
     await on_message_for_copy(message)
-
-    # Handle server-wide translation
     await on_message_for_server_translation(message)
-
-    # Handle server logging
     await on_message_for_server_logging(message)
 
-    # Don't process commands here
-    if message.content.startswith('/'):
+    if message.content.startswith('!'):
         await bot.process_commands(message)
         return
 
     user_id = message.author.id
     current_time = time.time()
 
-    # Check if message author is a bot
     if message.author.bot:
-        # Track consecutive bot messages
         if user_id not in bot_message_count:
             bot_message_count[user_id] = 0
 
         bot_message_count[user_id] += 1
 
-        # If bot posts 2 or more consecutive messages, delete and ban
         if bot_message_count[user_id] >= 2:
             try:
                 await message.delete()
                 await message.guild.ban(message.author, reason="Bot spam detected - 2+ consecutive messages")
 
-                # Send warning in channel
                 warning_embed = discord.Embed(
                     title="🚫 Bot Ban",
                     description=f"Bot {message.author.mention} has been banned for consecutive message spam.",
@@ -143,7 +136,6 @@ async def on_message(message):
                 )
                 await message.channel.send(embed=warning_embed, delete_after=10)
 
-                # Reset counter
                 if user_id in bot_message_count:
                     del bot_message_count[user_id]
 
@@ -152,34 +144,26 @@ async def on_message(message):
             except Exception as e:
                 print(f"Error banning bot: {e}")
     else:
-        # Reset bot message count for human users
         if user_id in bot_message_count:
             del bot_message_count[user_id]
 
-    # Anti-spam for human users - only target identical consecutive messages
     if not message.author.bot:
-        # Initialize user history if not exists
         if user_id not in user_message_history:
             user_message_history[user_id] = []
 
-        # Add current message with content and timestamp
         user_message_history[user_id].append({
             'content': message.content,
             'timestamp': current_time
         })
 
-        # Keep only messages from last 30 seconds
         user_message_history[user_id] = [
             msg for msg in user_message_history[user_id]
             if current_time - msg['timestamp'] <= 30
         ]
 
-        # Check for identical consecutive messages
         if len(user_message_history[user_id]) >= 3:
-            # Get the last 3 messages
             recent_messages = user_message_history[user_id][-3:]
             
-            # Check if all 3 messages have the same content and are not empty
             if (len(set(msg['content'] for msg in recent_messages)) == 1 and 
                 recent_messages[0]['content'].strip() != ""):
                 
@@ -187,18 +171,15 @@ async def on_message(message):
                     print(f"Identical message spam detected from {message.author.name} (ID: {user_id})")
                     print(f"Repeated message: {message.content[:50]}...")
 
-                    # Delete only the consecutive identical messages (last 3)
                     messages_to_delete = []
                     async for msg in message.channel.history(limit=10):
                         if (msg.author.id == user_id and 
                             msg.content == message.content and
                             current_time - msg.created_at.timestamp() <= 30):
                             messages_to_delete.append(msg)
-                            # Only delete the last 3 identical messages
                             if len(messages_to_delete) >= 3:
                                 break
                     
-                    # Delete only the 3 most recent identical messages
                     for msg in messages_to_delete[:3]:
                         try:
                             await msg.delete()
@@ -207,7 +188,6 @@ async def on_message(message):
 
                     print(f"Deleted {min(len(messages_to_delete), 3)} consecutive identical messages")
 
-                    # 3+ identical messages: 1 hour timeout
                     from datetime import timedelta
                     timeout_duration = discord.utils.utcnow() + timedelta(hours=1)
                     await message.author.timeout(timeout_duration, reason="同じメッセージの連投によるスパム")
@@ -221,7 +201,6 @@ async def on_message(message):
                     )
                     sent_warning = await message.channel.send(embed=warning_embed, delete_after=15)
 
-                    # Clear message history after action
                     user_message_history[user_id] = []
 
                 except discord.Forbidden as e:
@@ -229,14 +208,11 @@ async def on_message(message):
                 except Exception as e:
                     print(f"Error in anti-spam: {e}")
 
-    # Add experience for messages (exclude bots and commands)
     if not message.author.bot and not message.content.startswith('/'):
-        add_experience(message.author.id, message.guild.id, 5)  # 5 XP per message
+        add_experience(message.author.id, message.guild.id, 5)
 
-    # Process commands
     await bot.process_commands(message)
 
-# Role Selection View
 class RoleSelectionView(discord.ui.View):
     def __init__(self, available_roles):
         super().__init__(timeout=300)
@@ -244,7 +220,6 @@ class RoleSelectionView(discord.ui.View):
         self.setup_buttons()
 
     def setup_buttons(self):
-        # Create buttons for each role (max 25 buttons)
         for i, role in enumerate(self.available_roles[:25]):
             button = discord.ui.Button(
                 label=role.name,
@@ -262,15 +237,16 @@ class RoleSelectionView(discord.ui.View):
 
     async def assign_role(self, interaction, role):
         try:
-            # Check if user already has the role
+            if not interaction.user.guild_permissions.administrator:
+                await interaction.response.send_message('❌ ロール取得は管理者のみが利用できます。', ephemeral=True)
+                return
+
             if role in interaction.user.roles:
                 await interaction.response.send_message(f'❌ あなたは既に {role.name} ロールを持っています。', ephemeral=True)
                 return
 
-            # Add the role to the user
             await interaction.user.add_roles(role)
 
-            # Update user data
             data = load_data()
             user_id = str(interaction.user.id)
 
@@ -291,7 +267,6 @@ class RoleSelectionView(discord.ui.View):
         except Exception as e:
             await interaction.response.send_message(f'❌ ロールの付与に失敗しました: {str(e)}', ephemeral=True)
 
-# Specific Role View for single role assignment
 class SpecificRoleView(discord.ui.View):
     def __init__(self, role):
         super().__init__(timeout=None)
@@ -299,10 +274,13 @@ class SpecificRoleView(discord.ui.View):
 
     @discord.ui.button(label='ろーるをしゅとく！', style=discord.ButtonStyle.primary)
     async def get_role_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message('❌ ロール取得は管理者のみが利用できます。', ephemeral=True)
+            return
+
         data = load_data()
         user_id = str(interaction.user.id)
 
-        # Add user to database if not exists
         if user_id not in data['users']:
             data['users'][user_id] = {
                 'authenticated': True,
@@ -314,12 +292,10 @@ class SpecificRoleView(discord.ui.View):
         save_data(data)
 
         try:
-            # Check if user already has the role
             if self.role in interaction.user.roles:
                 await interaction.response.send_message(f'❌ あなたは既に {self.role.name} ロールを持っています。', ephemeral=True)
                 return
 
-            # Add the role to the user
             await interaction.user.add_roles(self.role)
             await interaction.response.send_message(f'✅ {self.role.name} ロールが付与されました！', ephemeral=True)
 
@@ -328,17 +304,19 @@ class SpecificRoleView(discord.ui.View):
         except Exception as e:
             await interaction.response.send_message(f'❌ ロールの付与に失敗しました: {str(e)}', ephemeral=True)
 
-# Public Auth View
 class PublicAuthView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
     @discord.ui.button(label='認証する', style=discord.ButtonStyle.primary)
     async def authenticate_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message('❌ 認証は管理者のみが利用できます。', ephemeral=True)
+            return
+
         data = load_data()
         user_id = str(interaction.user.id)
 
-        # Add user to database if not exists
         if user_id not in data['users']:
             data['users'][user_id] = {
                 'authenticated': True,
@@ -349,7 +327,6 @@ class PublicAuthView(discord.ui.View):
 
         save_data(data)
 
-        # Get assignable roles (exclude @everyone, bot roles, and admin roles)
         assignable_roles = []
         for role in interaction.guild.roles:
             if (role.name != '@everyone' and 
@@ -362,16 +339,14 @@ class PublicAuthView(discord.ui.View):
             await interaction.response.send_message('❌ 付与可能なロールがありません。', ephemeral=True)
             return
 
-        # Create embed for role selection
         embed = discord.Embed(
             title='🎭 ロール選択',
             description='取得したいロールを下のボタンから選択してください。\n\n**利用可能なロール:**',
             color=0x00ff99
         )
 
-        # Add role information to embed
         role_list = []
-        for role in assignable_roles[:10]:  # Show max 10 roles in embed
+        for role in assignable_roles[:10]:
             role_list.append(f'• {role.name} ({len(role.members)} メンバー)')
 
         embed.add_field(
@@ -382,7 +357,6 @@ class PublicAuthView(discord.ui.View):
 
         embed.set_footer(text='ボタンをクリックしてロールを取得')
 
-        # Create view with role buttons
         view = RoleSelectionView(assignable_roles)
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
@@ -401,24 +375,21 @@ async def nuke_channel(interaction: discord.Interaction):
         await interaction.response.send_message('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
         return
 
-    if not interaction.user.guild_permissions.manage_channels:
-        await interaction.response.send_message('❌ チャンネル管理権限が必要です。', ephemeral=True)
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message('❌ 管理者権限が必要です。', ephemeral=True)
         return
 
     channel = interaction.channel
 
-    # Store channel settings
     channel_name = channel.name
     channel_topic = channel.topic
     channel_category = channel.category
     channel_position = channel.position
     channel_overwrites = channel.overwrites
 
-    # Send initial response
     await interaction.response.send_message('🔄 チャンネルを再生成しています...', ephemeral=True)
 
     try:
-        # Create new channel with same settings first
         new_channel = await channel.guild.create_text_channel(
             name=f"{channel_name}-new",
             topic=channel_topic,
@@ -426,7 +397,6 @@ async def nuke_channel(interaction: discord.Interaction):
             overwrites=channel_overwrites
         )
 
-        # Send confirmation in new channel
         embed = discord.Embed(
             title='💥 チャンネルがヌークされました！',
             description='チャンネルが正常に再生成されました。',
@@ -434,10 +404,8 @@ async def nuke_channel(interaction: discord.Interaction):
         )
         await new_channel.send(embed=embed)
 
-        # Now delete the old channel
         await channel.delete(reason="Nuke command executed")
 
-        # Rename the new channel to the original name
         await new_channel.edit(name=channel_name, position=channel_position)
 
     except discord.Forbidden:
@@ -445,7 +413,6 @@ async def nuke_channel(interaction: discord.Interaction):
     except Exception as e:
         await interaction.followup.send(f'❌ エラーが発生しました: {str(e)}', ephemeral=True)
 
-# View user profile
 @bot.tree.command(name='profile', description='ユーザープロフィールを表示')
 async def view_profile(interaction: discord.Interaction, user: discord.Member = None):
     if not is_allowed_server(interaction.guild.id):
@@ -473,35 +440,25 @@ async def view_profile(interaction: discord.Interaction, user: discord.Member = 
 
     await interaction.response.send_message(embed=embed)
 
-
-
-
-
-
-
-# Setup role panel command
 @bot.tree.command(name='setuprole', description='ロール取得パネルを設置')
 async def setup_role(interaction: discord.Interaction, role_name: str = None):
     try:
-        # Immediately defer the response
         await interaction.response.defer()
         
         if not is_allowed_server(interaction.guild.id):
             await interaction.followup.send('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
             return
 
-        if not interaction.user.guild_permissions.manage_roles:
-            await interaction.followup.send('❌ ロール管理権限が必要です。', ephemeral=True)
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.followup.send('❌ 管理者権限が必要です。', ephemeral=True)
             return
 
-        # If specific role name is provided, create a panel for that specific role
         if role_name:
             role = discord.utils.get(interaction.guild.roles, name=role_name)
             if not role:
                 await interaction.followup.send(f'❌ "{role_name}" ロールが見つかりません。', ephemeral=True)
                 return
 
-            # Check if the role can be assigned
             if (role.name == '@everyone' or 
                 role.managed or 
                 role.permissions.administrator or
@@ -527,7 +484,6 @@ async def setup_role(interaction: discord.Interaction, role_name: str = None):
             view = SpecificRoleView(role)
             await interaction.followup.send(embed=embed, view=view)
         else:
-            # Original behavior - show all available roles
             embed = discord.Embed(
                 title='🎭 ロール取得システム',
                 description='下のボタンをクリックして認証を行い、ロールを取得してください。\n\n'
@@ -551,7 +507,6 @@ async def setup_role(interaction: discord.Interaction, role_name: str = None):
         except:
             pass
 
-# View user's servers
 @bot.tree.command(name='servers', description='ユーザーが参加しているサーバー一覧を表示')
 async def view_servers(interaction: discord.Interaction, user: discord.Member = None):
     if not is_allowed_server(interaction.guild.id):
@@ -561,7 +516,6 @@ async def view_servers(interaction: discord.Interaction, user: discord.Member = 
     if user is None:
         user = interaction.user
 
-    # Get all mutual guilds between the bot and the user
     mutual_guilds = user.mutual_guilds
 
     if not mutual_guilds:
@@ -575,17 +529,13 @@ async def view_servers(interaction: discord.Interaction, user: discord.Member = 
     )
 
     for guild in mutual_guilds:
-        # Get member object for this guild
         member = guild.get_member(user.id)
         if member:
-            # Get join date
             joined_at = member.joined_at
             join_date = joined_at.strftime('%Y/%m/%d') if joined_at else '不明'
 
-            # Get member count
             member_count = guild.member_count
 
-            # Get user's roles in this guild (excluding @everyone)
             roles = [role.name for role in member.roles if role.name != '@everyone']
             roles_text = ', '.join(roles[:3]) + ('...' if len(roles) > 3 else '') if roles else 'なし'
 
@@ -598,7 +548,6 @@ async def view_servers(interaction: discord.Interaction, user: discord.Member = 
     embed.set_footer(text=f'総サーバー数: {len(mutual_guilds)}')
     await interaction.response.send_message(embed=embed)
 
-# Anti-spam management commands
 @bot.tree.command(name='antispam-config', description='荒らし対策設定を表示・変更')
 async def antispam_config(interaction: discord.Interaction, action: str = "show"):
     if not is_allowed_server(interaction.guild.id):
@@ -634,7 +583,6 @@ async def antispam_config(interaction: discord.Interaction, action: str = "show"
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     elif action == "reset":
-        # Reset all spam tracking
         global user_message_history, bot_message_count
         user_message_history.clear()
         bot_message_count.clear()
@@ -656,7 +604,6 @@ async def spam_status(interaction: discord.Interaction):
         color=0x00ff00
     )
 
-    # Count active trackers
     active_users = len([uid for uid, history in user_message_history.items() if history])
     tracked_bots = len(bot_message_count)
 
@@ -666,8 +613,7 @@ async def spam_status(interaction: discord.Interaction):
 
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
-# Giveaway system
-active_giveaways = {}  # {message_id: {'end_time': datetime, 'prize': str, 'participants': set(), 'creator_id': int, 'channel_id': int}}
+active_giveaways = {}
 
 # Giveaway View
 class GiveawayView(discord.ui.View):
@@ -1441,7 +1387,7 @@ async def close_ticket_command(interaction: discord.Interaction, ticket_id: int)
 
 # Server logging commands
 @bot.tree.command(name='setup-server-log', description='サーバー間ログ転送を設定')
-async def setup_server_log(interaction: discord.Interaction, target_server_id: str):
+async def setup_server_log(interaction: discord.Interaction, target_server_id: str, channel_id: str = None):
     if not is_allowed_server(interaction.guild.id):
         await interaction.response.send_message('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
         return
@@ -1465,13 +1411,30 @@ async def setup_server_log(interaction: discord.Interaction, target_server_id: s
 
         source_guild_id = str(interaction.guild.id)
         
-        # Update configuration
-        server_log_configs[source_guild_id] = target_server_id
+        # Determine which channels to log
+        if channel_id:
+            # Single channel mode
+            try:
+                source_channel = bot.get_channel(int(channel_id))
+                if not source_channel or source_channel.guild.id != interaction.guild.id:
+                    await interaction.response.send_message('❌ 指定されたチャンネルが見つからないか、このサーバーのチャンネルではありません。', ephemeral=True)
+                    return
+                mode_text = f'チャンネル #{source_channel.name}'
+                # Store configuration with specific channel
+                server_log_configs[source_guild_id] = {"target_server": target_server_id, "channel_id": channel_id}
+            except ValueError:
+                await interaction.response.send_message('❌ 無効なチャンネルIDです。数字のみを入力してください。', ephemeral=True)
+                return
+        else:
+            # All channels mode
+            mode_text = 'サーバーの全チャンネル'
+            server_log_configs[source_guild_id] = {"target_server": target_server_id, "channel_id": None}
+        
         save_server_log_config()
 
         embed = discord.Embed(
             title='✅ サーバーログ設定完了',
-            description=f'**送信元:** {interaction.guild.name}\n**転送先:** {target_guild.name}\n\nこのサーバーのすべてのメッセージが転送先サーバーにログとして送信されます。',
+            description=f'**送信元:** {interaction.guild.name}\n**転送先:** {target_guild.name}\n**対象:** {mode_text}\n\nメッセージが転送先サーバーにログとして送信されます。',
             color=0x00ff00
         )
         embed.add_field(
@@ -1502,13 +1465,28 @@ async def server_log_status(interaction: discord.Interaction):
     )
 
     if source_guild_id in server_log_configs:
-        target_server_id = server_log_configs[source_guild_id]
+        config = server_log_configs[source_guild_id]
+        # Handle both old and new format
+        if isinstance(config, dict):
+            target_server_id = config["target_server"]
+            channel_id = config.get("channel_id")
+        else:
+            # Old format (backward compatibility)
+            target_server_id = config
+            channel_id = None
+            
         target_guild = bot.get_guild(int(target_server_id))
         target_name = target_guild.name if target_guild else f"不明なサーバー (ID: {target_server_id})"
         
+        if channel_id:
+            source_channel = bot.get_channel(int(channel_id))
+            channel_text = f'#{source_channel.name}' if source_channel else f'チャンネルID: {channel_id}'
+        else:
+            channel_text = '全チャンネル'
+        
         embed.add_field(
             name='🟢 ログ転送設定',
-            value=f'**状態:** 有効\n**転送先:** {target_name}\n**サーバーID:** {target_server_id}',
+            value=f'**状態:** 有効\n**転送先:** {target_name}\n**サーバーID:** {target_server_id}\n**対象:** {channel_text}',
             inline=False
         )
         embed.add_field(
@@ -1525,7 +1503,13 @@ async def server_log_status(interaction: discord.Interaction):
 
     # Show reverse logging (if this server is a target)
     reverse_configs = []
-    for source_id, target_id in server_log_configs.items():
+    for source_id, config in server_log_configs.items():
+        # Handle both old and new format
+        if isinstance(config, dict):
+            target_id = config["target_server"]
+        else:
+            target_id = config
+            
         if target_id == source_guild_id:
             source_guild = bot.get_guild(int(source_id))
             source_name = source_guild.name if source_guild else f"不明なサーバー (ID: {source_id})"
@@ -1660,8 +1644,8 @@ async def delete_messages(interaction: discord.Interaction, count: int, user: di
         await interaction.response.send_message('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
         return
 
-    if not interaction.user.guild_permissions.manage_messages:
-        await interaction.response.send_message('❌ メッセージ管理権限が必要です。', ephemeral=True)
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message('❌ 管理者権限が必要です。', ephemeral=True)
         return
 
     if count <= 0 or count > 100:
@@ -1777,7 +1761,7 @@ COMMAND_HELP = {
     'nuke': {
         'description': 'チャンネルを再生成（設定を引き継ぎ）',
         'usage': '/nuke',
-        'details': '現在のチャンネルを削除し、同じ設定で再作成します。チャンネル管理権限が必要です。'
+        'details': '現在のチャンネルを削除し、同じ設定で再作成します。管理者権限が必要です。'
     },
     'profile': {
         'description': 'ユーザープロフィールを表示',
@@ -1798,7 +1782,7 @@ COMMAND_HELP = {
     'setuprole': {
         'description': 'ロール取得パネルを設置',
         'usage': '/setuprole [ロール名]',
-        'details': '誰でもボタンをクリックしてロールを取得できるパネルを設置します。ロール名を指定すると特定のロール専用パネルが作成され、省略すると全ロール選択パネルが作成されます。ロール管理権限が必要です。'
+        'details': '管理者のみがボタンをクリックしてロールを取得できるパネルを設置します。ロール名を指定すると特定のロール専用パネルが作成され、省略すると全ロール選択パネルが作成されます。管理者権限が必要です。'
     },
     'antispam-config': {
         'description': '荒らし対策設定を表示・変更',
@@ -1834,8 +1818,8 @@ COMMAND_HELP = {
     },
     'setup-server-log': {
         'description': 'サーバー間ログ転送を設定',
-        'usage': '/setup-server-log <転送先サーバーID>',
-        'details': '現在のサーバーから指定したサーバーにすべてのメッセージをログとして転送します。対応するチャンネルが存在しない場合は自動作成されます。サーバー管理権限が必要です。'
+        'usage': '/setup-server-log <転送先サーバーID> [チャンネルID]',
+        'details': '現在のサーバーから指定したサーバーにメッセージをログとして転送します。チャンネルIDを指定した場合はそのチャンネルのみをログ転送し、省略した場合は全チャンネルが対象になります。対応するチャンネルが存在しない場合は自動作成されます。サーバー管理権限が必要です。'
     },
     'server-log-status': {
         'description': 'サーバーログ設定状況を確認',
@@ -1880,7 +1864,7 @@ COMMAND_HELP = {
     'delete': {
         'description': '指定した数のメッセージを削除',
         'usage': '/delete <メッセージ数> [ユーザー]',
-        'details': '指定した数のメッセージを削除します。ユーザーを指定すると、そのユーザーのメッセージのみを削除します。1-100件まで指定可能です。メッセージ管理権限が必要です。'
+        'details': '指定した数のメッセージを削除します。ユーザーを指定すると、そのユーザーのメッセージのみを削除します。1-100件まで指定可能です。管理者権限が必要です。'
     },
     'meigen_channel_setting': {
         'description': '名言を指定間隔で送信するチャンネルを設定',
@@ -1890,14 +1874,168 @@ COMMAND_HELP = {
     'timenuke': {
         'description': '指定した時間間隔でチャンネルを定期的にnuke',
         'usage': '/timenuke <間隔>',
-        'details': '実行したチャンネルを指定した間隔で定期的に再生成します。間隔は1m（分）、2h（時間）、1d（日）の形式で指定できます。最小間隔は1分です。チャンネル内のメッセージは全て削除されますが、チャンネル設定は引き継がれます。チャンネル管理権限が必要です。'
+        'details': '実行したチャンネルを指定した間隔で定期的に再生成します。間隔は1m（分）、2h（時間）、1d（日）の形式で指定できます。最小間隔は1分です。チャンネル内のメッセージは全て削除されますが、チャンネル設定は引き継がれます。管理者権限が必要です。'
     },
     'stop-timenuke': {
         'description': '定期nukeを停止',
         'usage': '/stop-timenuke',
-        'details': '現在設定されている定期ヌークを停止します。チャンネル管理権限が必要です。'
+        'details': '現在設定されている定期ヌークを停止します。管理者権限が必要です。'
     }
 }
+
+@bot.tree.command(name='online_check', description='ボットのオンライン状態を確認')
+async def online_check(interaction: discord.Interaction):
+    if not is_allowed_server(interaction.guild.id):
+        await interaction.response.send_message('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
+        return
+
+    # Get bot uptime
+    uptime_seconds = (datetime.now() - bot_start_time).total_seconds()
+    uptime_hours = int(uptime_seconds // 3600)
+    uptime_minutes = int((uptime_seconds % 3600) // 60)
+    uptime_secs = int(uptime_seconds % 60)
+
+    embed = discord.Embed(
+        title='🟢 ボットオンライン状態',
+        description='ボットは正常に稼働しています！',
+        color=0x00ff00
+    )
+    embed.add_field(
+        name='📊 ステータス',
+        value='🟢 オンライン',
+        inline=True
+    )
+    embed.add_field(
+        name='⏰ 稼働時間',
+        value=f'{uptime_hours}時間 {uptime_minutes}分 {uptime_secs}秒',
+        inline=True
+    )
+    embed.add_field(
+        name='🌐 接続サーバー数',
+        value=f'{len(bot.guilds)}サーバー',
+        inline=True
+    )
+    embed.add_field(
+        name='💾 レイテンシ',
+        value=f'{round(bot.latency * 1000)}ms',
+        inline=True
+    )
+    embed.set_footer(text=f'Bot ID: {bot.user.id} | 最終チェック: {datetime.now().strftime("%Y/%m/%d %H:%M:%S")}')
+
+    await interaction.response.send_message(embed=embed)
+
+@bot.command(name='link_bot')
+async def link_bot_command(ctx):
+    """Show invite links for all servers the bot is in"""
+    if not is_allowed_server(ctx.guild.id):
+        await ctx.send('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq')
+        return
+
+    if not ctx.author.guild_permissions.administrator:
+        await ctx.send('❌ 管理者権限が必要です。')
+        return
+
+    embed = discord.Embed(
+        title='🔗 ボット参加サーバーの招待リンク',
+        description=f'ボットが参加している{len(bot.guilds)}個のサーバーの招待リンク一覧',
+        color=0x0099ff
+    )
+
+    invite_count = 0
+    for guild in bot.guilds:
+        try:
+            # Try to get existing invites first
+            invites = await guild.invites()
+            invite_url = None
+            
+            if invites:
+                # Use the first available invite
+                invite_url = invites[0].url
+            else:
+                # Create a new invite if none exist
+                # Find a suitable channel to create invite from
+                suitable_channel = None
+                
+                # Prefer general channels
+                for channel in guild.text_channels:
+                    if channel.name.lower() in ['general', 'welcome', 'main', 'chat']:
+                        if channel.permissions_for(guild.me).create_instant_invite:
+                            suitable_channel = channel
+                            break
+                
+                # If no preferred channel found, use first available
+                if not suitable_channel:
+                    for channel in guild.text_channels:
+                        if channel.permissions_for(guild.me).create_instant_invite:
+                            suitable_channel = channel
+                            break
+                
+                if suitable_channel:
+                    invite = await suitable_channel.create_invite(
+                        max_age=0,  # Never expires
+                        max_uses=0,  # Unlimited uses
+                        reason="Bot invite link generation"
+                    )
+                    invite_url = invite.url
+
+            if invite_url:
+                embed.add_field(
+                    name=f'🌐 {guild.name}',
+                    value=f'[招待リンク]({invite_url})\nメンバー数: {guild.member_count}',
+                    inline=True
+                )
+                invite_count += 1
+            else:
+                embed.add_field(
+                    name=f'❌ {guild.name}',
+                    value='招待リンクを作成できません\n(権限不足)',
+                    inline=True
+                )
+
+        except discord.Forbidden:
+            embed.add_field(
+                name=f'❌ {guild.name}',
+                value='招待リンクを取得できません\n(権限不足)',
+                inline=True
+            )
+        except Exception as e:
+            print(f"Error getting invite for {guild.name}: {e}")
+            embed.add_field(
+                name=f'❌ {guild.name}',
+                value='エラーが発生しました',
+                inline=True
+            )
+
+    embed.set_footer(text=f'招待リンク取得成功: {invite_count}/{len(bot.guilds)}サーバー')
+    
+    # If embed is too large, split into multiple messages
+    if len(embed.fields) > 25:  # Discord embed field limit
+        # Send first 25 fields
+        first_embed = discord.Embed(
+            title='🔗 ボット参加サーバーの招待リンク (1/2)',
+            description=f'ボットが参加している{len(bot.guilds)}個のサーバーの招待リンク一覧',
+            color=0x0099ff
+        )
+        
+        for field in embed.fields[:25]:
+            first_embed.add_field(name=field.name, value=field.value, inline=field.inline)
+        
+        first_embed.set_footer(text=f'招待リンク取得成功: {invite_count}/{len(bot.guilds)}サーバー (続きあり)')
+        await ctx.send(embed=first_embed)
+        
+        # Send remaining fields
+        second_embed = discord.Embed(
+            title='🔗 ボット参加サーバーの招待リンク (2/2)',
+            color=0x0099ff
+        )
+        
+        for field in embed.fields[25:]:
+            second_embed.add_field(name=field.name, value=field.value, inline=field.inline)
+        
+        second_embed.set_footer(text=f'招待リンク取得成功: {invite_count}/{len(bot.guilds)}サーバー')
+        await ctx.send(embed=second_embed)
+    else:
+        await ctx.send(embed=embed)
 
 @bot.tree.command(name='help', description='ヘルプを表示')
 async def help_command(interaction: discord.Interaction, command: str = None):
@@ -1944,20 +2082,16 @@ async def help_command(interaction: discord.Interaction, command: str = None):
             )
 
 def run_bot():
-    """Run Discord bot"""
     token = os.getenv('DISCORD_TOKEN')
     if not token:
         print('DISCORD_TOKEN環境変数が設定されていません。')
         return
-
     print("Starting Discord bot...")
     bot.run(token)
 
-# Server message logging system
-server_log_configs = {}  # {source_server_id: target_server_id}
+server_log_configs = {}
 
 def save_server_log_config():
-    """Save server log configuration"""
     try:
         with open('server_log_config.json', 'w', encoding='utf-8') as f:
             json.dump(server_log_configs, f, ensure_ascii=False, indent=2)
@@ -1965,7 +2099,6 @@ def save_server_log_config():
         print(f"Error saving server log config: {e}")
 
 def load_server_log_config():
-    """Load server log configuration"""
     global server_log_configs
     try:
         if os.path.exists('server_log_config.json'):
@@ -1976,46 +2109,39 @@ def load_server_log_config():
         server_log_configs = {}
 
 async def on_message_for_copy(message):
-    """Handle message copying functionality"""
-    # This function can be implemented later for message copying features
     pass
 
 async def on_message_for_server_translation(message):
-    """Handle server translation functionality"""
-    # This function can be implemented later for translation features
     pass
 
 async def on_message_for_server_logging(message):
-    """Handle server-to-server message logging"""
     if message.author.bot:
         return
-    
     source_guild_id = str(message.guild.id)
-    
-    # Check if this server has logging configured
     if source_guild_id not in server_log_configs:
         return
-    
-    target_guild_id = server_log_configs[source_guild_id]
+    config = server_log_configs[source_guild_id]
+    if isinstance(config, dict):
+        target_guild_id = config["target_server"]
+        specific_channel_id = config.get("channel_id")
+        if specific_channel_id and str(message.channel.id) != specific_channel_id:
+            return
+    else:
+        target_guild_id = config
+        specific_channel_id = None
     target_guild = bot.get_guild(int(target_guild_id))
-    
     if not target_guild:
         print(f"Target guild {target_guild_id} not found")
         return
-    
-    # Find or create corresponding channel in target server
     source_channel_name = message.channel.name
     target_channel = discord.utils.get(target_guild.text_channels, name=source_channel_name)
-    
     if not target_channel:
         try:
-            # Create channel if it doesn't exist
             category = None
             if message.channel.category:
                 category = discord.utils.get(target_guild.categories, name=message.channel.category.name)
                 if not category:
                     category = await target_guild.create_category(message.channel.category.name)
-            
             target_channel = await target_guild.create_text_channel(
                 name=source_channel_name,
                 category=category,
@@ -2025,8 +2151,6 @@ async def on_message_for_server_logging(message):
         except Exception as e:
             print(f"Failed to create channel: {e}")
             return
-    
-    # Prepare log message
     embed = discord.Embed(
         description=message.content,
         color=0x00ff99,
@@ -2037,38 +2161,33 @@ async def on_message_for_server_logging(message):
         icon_url=message.author.avatar.url if message.author.avatar else None
     )
     embed.set_footer(text=f"From: {message.guild.name} #{message.channel.name}")
-    
-    # Handle attachments
     files = []
     if message.attachments:
         attachment_info = []
         for attachment in message.attachments:
             attachment_info.append(f"[{attachment.filename}]({attachment.url})")
-        
         if attachment_info:
             embed.add_field(
                 name="📎 添付ファイル",
                 value="\n".join(attachment_info),
                 inline=False
             )
-    
     try:
         await target_channel.send(embed=embed)
         print(f"Logged message from {message.guild.name} to {target_guild.name}")
     except Exception as e:
         print(f"Failed to send log message: {e}")
 
-# channel auto creation
-channel_configs = {} # {server_id: {channel_name: {"type": "text" or "voice", "category": category_name}}
+channel_configs = {}
+
 def save_translation_config():
-    """Save channel configuration"""
     try:
         with open('channel_config.json', 'w', encoding='utf-8') as f:
             json.dump(channel_configs, f, ensure_ascii=False, indent=2)
     except Exception as e:
         print(f"Error saving channel config: {e}")
+
 def load_translation_config():
-    """Load channel configuration"""
     global channel_configs
     try:
         if os.path.exists('channel_config.json'):
@@ -2079,7 +2198,6 @@ def load_translation_config():
         channel_configs = {}
 
 async def create_channel_if_not_exists(guild, channel_name, channel_type="text", category_name=None):
-    """Create channel if it does not exist."""
     existing_channel = discord.utils.get(guild.channels, name=channel_name)
     if not existing_channel:
         print(f"Channel {channel_name} does not exist. Creating...")
@@ -2089,61 +2207,44 @@ async def create_channel_if_not_exists(guild, channel_name, channel_type="text",
                 category = await guild.create_category(category_name)
         else:
             category = None
-
         if channel_type == "text":
             await guild.create_text_channel(channel_name, category=category)
         elif channel_type == "voice":
             await guild.create_voice_channel(channel_name, category=category)
         print(f"Channel {channel_name} created successfully.")
 
-# Time nuke system
-time_nuke_tasks = {}  # {guild_id: task}
+time_nuke_tasks = {}
 
 async def execute_time_nuke(guild_id, channel_id, interval_seconds):
-    """Execute nuke at specified intervals"""
     while True:
         await asyncio.sleep(interval_seconds)
-        
         try:
             guild = bot.get_guild(int(guild_id))
             if not guild:
                 break
-                
             channel = guild.get_channel(int(channel_id))
             if not channel:
                 break
-            
-            # Store channel settings
             channel_name = channel.name
             channel_topic = channel.topic
             channel_category = channel.category
             channel_position = channel.position
             channel_overwrites = channel.overwrites
-
-            # Create new channel with same settings first
             new_channel = await guild.create_text_channel(
                 name=f"{channel_name}-new",
                 topic=channel_topic,
                 category=channel_category,
                 overwrites=channel_overwrites
             )
-
-            # Send confirmation in new channel
             embed = discord.Embed(
                 title='💥 定期ヌーク実行！',
                 description='チャンネルが定期的に再生成されました。',
                 color=0xff0000
             )
             await new_channel.send(embed=embed)
-
-            # Delete the old channel
             await channel.delete(reason="Time nuke executed")
-
-            # Rename the new channel to the original name
             await new_channel.edit(name=channel_name, position=channel_position)
-            
             print(f"Time nuke executed for {guild.name}#{channel_name}")
-            
         except Exception as e:
             print(f"Error in time nuke: {e}")
             break
@@ -2153,12 +2254,9 @@ async def timenuke_command(interaction: discord.Interaction, interval: str):
     if not is_allowed_server(interaction.guild.id):
         await interaction.response.send_message('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
         return
-
-    if not interaction.user.guild_permissions.manage_channels:
-        await interaction.response.send_message('❌ チャンネル管理権限が必要です。', ephemeral=True)
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message('❌ 管理者権限が必要です。', ephemeral=True)
         return
-
-    # Parse interval
     try:
         if interval.endswith('m'):
             minutes = int(interval[:-1])
@@ -2178,26 +2276,18 @@ async def timenuke_command(interaction: discord.Interaction, interval: str):
     except ValueError:
         await interaction.response.send_message('❌ 時間形式が正しくありません。例: 5m, 2h, 1d', ephemeral=True)
         return
-
     guild_id = str(interaction.guild.id)
     channel_id = str(interaction.channel.id)
-
-    # Stop existing task if any
     if guild_id in time_nuke_tasks:
         time_nuke_tasks[guild_id].cancel()
-
-    # Start new time nuke task
     task = asyncio.create_task(execute_time_nuke(guild_id, channel_id, seconds))
     time_nuke_tasks[guild_id] = task
-
-    # Format interval display
     if seconds >= 86400:
         interval_display = f"{seconds // 86400}日"
     elif seconds >= 3600:
         interval_display = f"{seconds // 3600}時間"
     else:
         interval_display = f"{seconds // 60}分"
-
     embed = discord.Embed(
         title='⏰ 定期ヌーク設定完了',
         description=f'このチャンネル（{interaction.channel.mention}）を{interval_display}間隔で定期的にヌークします。',
@@ -2214,7 +2304,6 @@ async def timenuke_command(interaction: discord.Interaction, interval: str):
         inline=False
     )
     embed.set_footer(text='停止するには /stop-timenuke を使用してください')
-
     await interaction.response.send_message(embed=embed)
 
 @bot.tree.command(name='stop-timenuke', description='定期nukeを停止')
@@ -2222,21 +2311,15 @@ async def stop_timenuke_command(interaction: discord.Interaction):
     if not is_allowed_server(interaction.guild.id):
         await interaction.response.send_message('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
         return
-
-    if not interaction.user.guild_permissions.manage_channels:
-        await interaction.response.send_message('❌ チャンネル管理権限が必要です。', ephemeral=True)
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message('❌ 管理者権限が必要です。', ephemeral=True)
         return
-
     guild_id = str(interaction.guild.id)
-
     if guild_id not in time_nuke_tasks:
         await interaction.response.send_message('❌ このサーバーで定期ヌークは設定されていません。', ephemeral=True)
         return
-
-    # Stop the task
     time_nuke_tasks[guild_id].cancel()
     del time_nuke_tasks[guild_id]
-
     embed = discord.Embed(
         title='✅ 定期ヌーク停止',
         description='定期ヌークが停止されました。',
@@ -2244,46 +2327,34 @@ async def stop_timenuke_command(interaction: discord.Interaction):
     )
     await interaction.response.send_message(embed=embed)
 
-# Warning system
 def get_user_warnings(user_id, guild_id):
-    """Get user warning count"""
     data = load_data()
     if 'warnings' not in data:
         data['warnings'] = {}
-    
     guild_key = str(guild_id)
     user_key = str(user_id)
-    
     if guild_key not in data['warnings']:
         data['warnings'][guild_key] = {}
-    
     if user_key not in data['warnings'][guild_key]:
         return 0
-    
     return data['warnings'][guild_key][user_key]['count']
 
 def add_user_warning(user_id, guild_id, reason, moderator_id):
-    """Add warning to user"""
     data = load_data()
     if 'warnings' not in data:
         data['warnings'] = {}
-    
     guild_key = str(guild_id)
     user_key = str(user_id)
-    
     if guild_key not in data['warnings']:
         data['warnings'][guild_key] = {}
-    
     if user_key not in data['warnings'][guild_key]:
         data['warnings'][guild_key][user_key] = {'count': 0, 'history': []}
-    
     data['warnings'][guild_key][user_key]['count'] += 1
     data['warnings'][guild_key][user_key]['history'].append({
         'reason': reason,
         'moderator_id': str(moderator_id),
         'timestamp': datetime.now().isoformat()
     })
-    
     save_data(data)
     return data['warnings'][guild_key][user_key]['count']
 
@@ -2292,17 +2363,13 @@ async def warn_user(interaction: discord.Interaction, user: discord.Member, reas
     if not is_allowed_server(interaction.guild.id):
         await interaction.response.send_message('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
         return
-
     if not interaction.user.guild_permissions.manage_messages:
         await interaction.response.send_message('❌ メッセージ管理権限が必要です。', ephemeral=True)
         return
-
     if user.guild_permissions.administrator:
         await interaction.response.send_message('❌ 管理者に警告を与えることはできません。', ephemeral=True)
         return
-
     warning_count = add_user_warning(user.id, interaction.guild.id, reason, interaction.user.id)
-
     embed = discord.Embed(
         title='⚠️ 警告システム',
         color=0xff9900
@@ -2311,30 +2378,21 @@ async def warn_user(interaction: discord.Interaction, user: discord.Member, reas
     embed.add_field(name='警告回数', value=f'{warning_count}/3', inline=True)
     embed.add_field(name='理由', value=reason, inline=False)
     embed.add_field(name='モデレーター', value=interaction.user.mention, inline=True)
-
     try:
         if warning_count == 1:
-            # First warning - just warn
             embed.add_field(name='措置', value='警告のみ', inline=False)
             embed.set_footer(text='次回警告で1時間ミュート、3回目でBanとなります')
-            
         elif warning_count == 2:
-            # Second warning - 1 hour timeout
             from datetime import timedelta
             timeout_duration = discord.utils.utcnow() + timedelta(hours=1)
             await user.timeout(timeout_duration, reason=f"2回目の警告: {reason}")
             embed.add_field(name='措置', value='1時間タイムアウト', inline=False)
             embed.set_footer(text='次回警告でBanとなります')
-            
         elif warning_count >= 3:
-            # Third warning - ban
             await user.ban(reason=f"3回目の警告: {reason}")
             embed.add_field(name='措置', value='サーバーからBan', inline=False)
             embed.set_footer(text='規則違反により永久Ban')
-
         await interaction.response.send_message(embed=embed)
-
-        # Send DM to user
         try:
             dm_embed = discord.Embed(
                 title=f'⚠️ {interaction.guild.name}で警告を受けました',
@@ -2347,11 +2405,9 @@ async def warn_user(interaction: discord.Interaction, user: discord.Member, reas
                 dm_embed.add_field(name='措置', value='1時間のタイムアウトが適用されました', inline=False)
             elif warning_count >= 3:
                 dm_embed.add_field(name='措置', value='サーバーからBanされました', inline=False)
-            
             await user.send(embed=dm_embed)
         except:
             pass
-
     except discord.Forbidden:
         await interaction.response.send_message('❌ ユーザーに措置を適用する権限がありません。', ephemeral=True)
     except Exception as e:
@@ -2474,209 +2530,7 @@ async def temp_mute(interaction: discord.Interaction, user: discord.Member, dura
     except Exception as e:
         await interaction.response.send_message(f'❌ エラーが発生しました: {str(e)}', ephemeral=True)
 
-# Vending machine system
-class VendingMachineView(discord.ui.View):
-    def __init__(self, products):
-        super().__init__(timeout=None)
-        self.products = products
-        self.setup_buttons()
 
-    def setup_buttons(self):
-        for i, product in enumerate(self.products[:25]):  # Max 25 buttons
-            button = discord.ui.Button(
-                label=f"{product['name']} - ¥{product['price']}",
-                style=discord.ButtonStyle.primary,
-                custom_id=f"vending_{i}",
-                emoji="🛒"
-            )
-            button.callback = self.create_purchase_callback(i)
-            self.add_item(button)
-
-    def create_purchase_callback(self, product_index):
-        async def purchase_callback(interaction):
-            product = self.products[product_index]
-            
-            # Create payment confirmation view
-            payment_view = PaymentConfirmationView(product, interaction.user.id)
-            
-            embed = discord.Embed(
-                title='💳 お支払い確認',
-                description=f'**商品:** {product["name"]}\n**価格:** ¥{product["price"]}\n\n下のPayPayリンクから支払いを行い、完了後に「支払い完了」ボタンを押してください。',
-                color=0x00ff99
-            )
-            embed.add_field(
-                name='PayPayリンク',
-                value=f'[こちらから支払い]({product["paypay_link"]})',
-                inline=False
-            )
-            embed.set_footer(text='支払い後、管理者が確認して商品をお送りします')
-            
-            await interaction.response.send_message(embed=embed, view=payment_view, ephemeral=True)
-        
-        return purchase_callback
-
-class PaymentConfirmationView(discord.ui.View):
-    def __init__(self, product, user_id):
-        super().__init__(timeout=300)
-        self.product = product
-        self.user_id = user_id
-
-    @discord.ui.button(label='💰 支払い完了', style=discord.ButtonStyle.success, emoji='💰')
-    async def payment_completed(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Find admin confirmation channel
-        admin_channel = discord.utils.get(interaction.guild.text_channels, name="購入確認")
-        if not admin_channel:
-            # Try to create admin channel
-            try:
-                admin_channel = await interaction.guild.create_text_channel("購入確認")
-            except:
-                await interaction.response.send_message('❌ 管理者チャンネルが見つかりません。', ephemeral=True)
-                return
-
-        # Create admin confirmation view
-        admin_view = AdminConfirmationView(self.product, self.user_id, interaction.user)
-        
-        embed = discord.Embed(
-            title='🛒 購入確認が必要です',
-            description=f'**購入者:** {interaction.user.mention}\n**商品:** {self.product["name"]}\n**価格:** ¥{self.product["price"]}',
-            color=0xff9900
-        )
-        embed.add_field(
-            name='PayPayリンク',
-            value=f'[支払い確認]({self.product["paypay_link"]})',
-            inline=False
-        )
-        embed.set_footer(text='管理者は支払いを確認後、適切なボタンを押してください')
-        
-        await admin_channel.send(embed=embed, view=admin_view)
-        await interaction.response.send_message('✅ 支払い完了の報告を受け付けました。管理者が確認後、DMで商品をお送りします。', ephemeral=True)
-
-class AdminConfirmationView(discord.ui.View):
-    def __init__(self, product, user_id, user):
-        super().__init__(timeout=None)
-        self.product = product
-        self.user_id = user_id
-        self.user = user
-
-    @discord.ui.button(label='✅ 支払い確認済み', style=discord.ButtonStyle.success, emoji='✅')
-    async def confirm_payment(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message('❌ 管理者権限が必要です。', ephemeral=True)
-            return
-
-        # Send product to user via DM
-        try:
-            dm_embed = discord.Embed(
-                title='🎉 商品お渡し',
-                description=f'お買い上げありがとうございます！\n\n**商品:** {self.product["name"]}\n**内容:** {self.product["content"]}',
-                color=0x00ff00
-            )
-            dm_embed.set_footer(text=f'購入元: {interaction.guild.name}')
-            
-            await self.user.send(embed=dm_embed)
-            
-            # Update the admin message
-            embed = discord.Embed(
-                title='✅ 処理完了',
-                description=f'**購入者:** {self.user.mention}\n**商品:** {self.product["name"]}\n**処理者:** {interaction.user.mention}\n**処理日時:** <t:{int(datetime.now().timestamp())}:F>',
-                color=0x00ff00
-            )
-            
-            await interaction.response.edit_message(embed=embed, view=None)
-            
-        except discord.Forbidden:
-            await interaction.response.send_message('❌ ユーザーにDMを送信できませんでした。', ephemeral=True)
-
-    @discord.ui.button(label='❌ 支払い未確認', style=discord.ButtonStyle.danger, emoji='❌')
-    async def deny_payment(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message('❌ 管理者権限が必要です。', ephemeral=True)
-            return
-
-        # Notify user about payment issue
-        try:
-            dm_embed = discord.Embed(
-                title='❌ 支払い確認できませんでした',
-                description=f'申し訳ございませんが、以下の商品の支払いが確認できませんでした。\n\n**商品:** {self.product["name"]}\n**価格:** ¥{self.product["price"]}\n\nもう一度お支払いいただくか、サポートにお問い合わせください。',
-                color=0xff0000
-            )
-            
-            await self.user.send(embed=dm_embed)
-            
-            # Update the admin message
-            embed = discord.Embed(
-                title='❌ 支払い未確認',
-                description=f'**購入者:** {self.user.mention}\n**商品:** {self.product["name"]}\n**処理者:** {interaction.user.mention}\n**処理日時:** <t:{int(datetime.now().timestamp())}:F>',
-                color=0xff0000
-            )
-            
-            await interaction.response.edit_message(embed=embed, view=None)
-            
-        except discord.Forbidden:
-            await interaction.response.send_message('❌ ユーザーにDMを送信できませんでした。', ephemeral=True)
-
-@bot.tree.command(name='setup-vending', description='自動販売機を設置')
-async def setup_vending(interaction: discord.Interaction):
-    try:
-        await interaction.response.defer()
-        
-        if not is_allowed_server(interaction.guild.id):
-            await interaction.followup.send('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
-            return
-
-        if not interaction.user.guild_permissions.administrator:
-            await interaction.followup.send('❌ 管理者権限が必要です。', ephemeral=True)
-            return
-
-        # Sample products (you can modify these)
-        products = [
-            {
-                "name": "デジタルコンテンツA",
-                "price": 1000,
-                "content": "特別なデジタルコンテンツをお渡しします。",
-                "paypay_link": "https://pay.paypay.ne.jp/example1"
-            },
-            {
-                "name": "プレミアムサービス",
-                "price": 2500,
-                "content": "プレミアムサービス1ヶ月分のアクセス権をお渡しします。",
-                "paypay_link": "https://pay.paypay.ne.jp/example2"
-            },
-            {
-                "name": "限定アイテム",
-                "price": 500,
-                "content": "限定アイテムをお渡しします。",
-                "paypay_link": "https://pay.paypay.ne.jp/example3"
-            }
-        ]
-
-        embed = discord.Embed(
-            title='🏪 自動販売機',
-            description='購入したい商品のボタンをクリックしてください。\n\n**購入の流れ:**\n1. 商品ボタンをクリック\n2. PayPayリンクから支払い\n3. 「支払い完了」ボタンを押す\n4. 管理者確認後、DMで商品お渡し',
-            color=0x00ff99
-        )
-        
-        for product in products:
-            embed.add_field(
-                name=f'🛒 {product["name"]}',
-                value=f'**価格:** ¥{product["price"]}\n{product["content"][:50]}...',
-                inline=True
-            )
-        
-        embed.set_footer(text='PayPay支払い対応 | 24時間自動対応')
-        
-        view = VendingMachineView(products)
-        await interaction.followup.send(embed=embed, view=view)
-        
-    except Exception as e:
-        print(f"Error in setup-vending command: {e}")
-        try:
-            if not interaction.response.is_done():
-                await interaction.response.send_message(f'❌ エラーが発生しました: {str(e)}', ephemeral=True)
-            else:
-                await interaction.followup.send(f'❌ エラーが発生しました: {str(e)}', ephemeral=True)
-        except:
-            pass
 
 # Support system
 class SupportResponseView(discord.ui.View):
@@ -2737,7 +2591,6 @@ async def support_request(interaction: discord.Interaction, content: str):
         await interaction.response.send_message('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
         return
 
-    # Find or create support channel
     support_channel = discord.utils.get(interaction.guild.text_channels, name="サポート要請")
     if not support_channel:
         try:
@@ -2746,7 +2599,6 @@ async def support_request(interaction: discord.Interaction, content: str):
             await interaction.response.send_message('❌ サポートチャンネルを作成できませんでした。', ephemeral=True)
             return
 
-    # Create support request embed
     embed = discord.Embed(
         title='🆘 サポート要請',
         description=f'**要請者:** {interaction.user.mention}\n**内容:** {content}',
@@ -2760,8 +2612,521 @@ async def support_request(interaction: discord.Interaction, content: str):
     
     await interaction.response.send_message('✅ サポート要請を送信しました。対応者が決まり次第、DMでご連絡します。', ephemeral=True)
 
-# Add to help system
+@bot.tree.command(name='allmessage', description='サーバーの全メッセージを指定したサーバーにコピー')
+async def allmessage_command(interaction: discord.Interaction, target_server_id: str, channel_id: str = None):
+    if not is_allowed_server(interaction.guild.id):
+        await interaction.response.send_message('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
+        return
+
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message('❌ 管理者権限が必要です。', ephemeral=True)
+        return
+
+    try:
+        target_guild_id = int(target_server_id)
+        target_guild = bot.get_guild(target_guild_id)
+        
+        if not target_guild:
+            await interaction.response.send_message('❌ 指定されたサーバーが見つかりません。Botがそのサーバーに参加していることを確認してください。', ephemeral=True)
+            return
+        
+        if not target_guild.me.guild_permissions.manage_channels:
+            await interaction.response.send_message('❌ 転送先サーバーでチャンネル管理権限が必要です。', ephemeral=True)
+            return
+
+        if channel_id:
+            try:
+                source_channel = bot.get_channel(int(channel_id))
+                if not source_channel or source_channel.guild.id != interaction.guild.id:
+                    await interaction.response.send_message('❌ 指定されたチャンネルが見つからないか、このサーバーのチャンネルではありません。', ephemeral=True)
+                    return
+                channels_to_process = [source_channel]
+                mode_text = f'チャンネル #{source_channel.name}'
+            except ValueError:
+                await interaction.response.send_message('❌ 無効なチャンネルIDです。数字のみを入力してください。', ephemeral=True)
+                return
+        else:
+            channels_to_process = interaction.guild.text_channels
+            mode_text = 'サーバーの全チャンネル'
+
+        source_guild_id = str(interaction.guild.id)
+        if channel_id:
+            server_log_configs[source_guild_id] = {"target_server": target_server_id, "channel_id": channel_id}
+        else:
+            server_log_configs[source_guild_id] = {"target_server": target_server_id, "channel_id": None}
+        save_server_log_config()
+
+        await interaction.response.send_message(
+            f'✅ メッセージコピーを開始しました。\n**転送先:** {target_guild.name}\n**対象:** {mode_text}\n\n処理には時間がかかる場合があります。進行状況は別メッセージで更新されます。\n\n🔄 **サーバーログも自動で設定されました。**', 
+            ephemeral=True
+        )
+
+        status_channel = interaction.channel
+
+        status_embed = discord.Embed(
+            title='📋 メッセージコピー進行状況',
+            description=f'**送信元:** {interaction.guild.name}\n**転送先:** {target_guild.name}\n**対象:** {mode_text}\n\nメッセージをコピーしています...',
+            color=0x0099ff
+        )
+        status_embed.add_field(
+            name='進行状況',
+            value='開始中...',
+            inline=False
+        )
+        status_embed.set_footer(text=f'開始者: {interaction.user.display_name}')
+        
+        try:
+            status_message = await status_channel.send(embed=status_embed)
+        except:
+            status_message = None
+
+        copied_messages = 0
+        created_channels = 0
+
+        for channel in channels_to_process:
+            try:
+                target_channel = discord.utils.get(target_guild.text_channels, name=channel.name)
+                
+                if not target_channel:
+                    category = None
+                    if channel.category:
+                        category = discord.utils.get(target_guild.categories, name=channel.category.name)
+                        if not category:
+                            category = await target_guild.create_category(channel.category.name)
+                    
+                    target_channel = await target_guild.create_text_channel(
+                        name=channel.name,
+                        category=category,
+                        topic=f"Copy from {interaction.guild.name}#{channel.name}"
+                    )
+                    created_channels += 1
+
+                channel_messages = 0
+                async for message in channel.history(limit=None, oldest_first=True):
+                    
+                    embed = discord.Embed(
+                        description=message.content if message.content else "(添付ファイルのみ)",
+                        color=0x00ff99,
+                        timestamp=message.created_at
+                    )
+                    embed.set_author(
+                        name=f"{message.author.display_name} ({message.author.name})",
+                        icon_url=message.author.avatar.url if message.author.avatar else None
+                    )
+                    embed.set_footer(text=f"Original: {interaction.guild.name} #{channel.name}")
+                    
+                    if message.attachments:
+                        attachment_info = []
+                        for attachment in message.attachments:
+                            attachment_info.append(f"[{attachment.filename}]({attachment.url})")
+                        
+                        if attachment_info:
+                            embed.add_field(
+                                name="📎 添付ファイル",
+                                value="\n".join(attachment_info),
+                                inline=False
+                            )
+                    
+                    try:
+                        await target_channel.send(embed=embed)
+                        copied_messages += 1
+                        channel_messages += 1
+                        
+                        if copied_messages % 100 == 0 and status_message:
+                            try:
+                                status_embed.clear_fields()
+                                status_embed.add_field(
+                                    name='進行状況',
+                                    value=f'コピー済みメッセージ: {copied_messages}\n作成チャンネル: {created_channels}\n現在処理中: #{channel.name}',
+                                    inline=False
+                                )
+                                await status_message.edit(embed=status_embed)
+                            except Exception as e:
+                                print(f"Status update error: {e}")
+                                status_message = None
+                        
+                    except Exception as e:
+                        print(f"Failed to copy message: {e}")
+                        continue
+                
+                print(f"Copied {channel_messages} messages from #{channel.name}")
+                
+            except Exception as e:
+                print(f"Error processing channel #{channel.name}: {e}")
+                continue
+
+        final_embed = discord.Embed(
+            title='✅ メッセージコピー完了',
+            description=f'**送信元:** {interaction.guild.name}\n**転送先:** {target_guild.name}',
+            color=0x00ff00
+        )
+        final_embed.add_field(
+            name='📊 統計情報',
+            value=f'**コピーしたメッセージ:** {copied_messages}件\n**作成したチャンネル:** {created_channels}個',
+            inline=False
+        )
+        final_embed.set_footer(text=f'完了者: {interaction.user.display_name} | 全てのメッセージが正常にコピーされました')
+        
+        if status_message:
+            try:
+                await status_message.edit(embed=final_embed)
+            except Exception as e:
+                print(f"Final status update error: {e}")
+                try:
+                    await status_channel.send(embed=final_embed)
+                except Exception as e2:
+                    print(f"Failed to send completion message: {e2}")
+        else:
+            try:
+                await status_channel.send(embed=final_embed)
+            except Exception as e:
+                print(f"Failed to send completion message: {e}")
+
+    except ValueError:
+        try:
+            await interaction.response.send_message('❌ 無効なサーバーIDです。数字のみを入力してください。', ephemeral=True)
+        except:
+            try:
+                await interaction.followup.send('❌ 無効なサーバーIDです。数字のみを入力してください。', ephemeral=True)
+            except:
+                print("Failed to send error message about invalid server ID")
+    except Exception as e:
+        print(f"Error in allmessage command: {e}")
+        try:
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f'❌ エラーが発生しました: {str(e)}', ephemeral=True)
+            else:
+                await interaction.followup.send(f'❌ エラーが発生しました: {str(e)}', ephemeral=True)
+        except Exception as e2:
+            print(f"Failed to send error message: {e2}")
+            try:
+                error_embed = discord.Embed(
+                    title='❌ allmessageコマンドエラー',
+                    description=f'エラーが発生しました: {str(e)}',
+                    color=0xff0000
+                )
+                await interaction.channel.send(embed=error_embed)
+            except Exception as e3:
+                print(f"Failed to send error message to channel: {e3}")
+
+@bot.tree.command(name='allmember', description='指定したロールをサーバーの全メンバーに付与')
+async def allmember_command(interaction: discord.Interaction, role: discord.Role):
+    if not is_allowed_server(interaction.guild.id):
+        await interaction.response.send_message('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
+        return
+
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message('❌ 管理者権限が必要です。', ephemeral=True)
+        return
+
+    if role.name == '@everyone':
+        await interaction.response.send_message('❌ @everyoneロールは付与できません。', ephemeral=True)
+        return
+    
+    if role.managed:
+        await interaction.response.send_message('❌ 管理されたロール（Bot用ロールなど）は付与できません。', ephemeral=True)
+        return
+    
+    if role >= interaction.guild.me.top_role:
+        await interaction.response.send_message('❌ Botの最高ロールより上位のロールは付与できません。', ephemeral=True)
+        return
+    
+    if role.permissions.administrator:
+        await interaction.response.send_message('❌ 管理者権限を持つロールは付与できません。', ephemeral=True)
+        return
+
+    await interaction.response.send_message(
+        f'🔄 **{role.name}** ロールをサーバーの全メンバーに付与しています...\n\nメンバーリストを読み込み中です...',
+        ephemeral=True
+    )
+    
+    all_members = interaction.guild.members
+    bot_members = [member for member in all_members if member.bot]
+    human_members = [member for member in all_members if not member.bot]
+    
+    members = human_members
+    total_members = len(members)
+    
+    try:
+        print("Attempting to fetch all guild members...")
+        await interaction.guild.chunk()
+        print("Guild chunking completed")
+        
+        all_members_after_chunk = interaction.guild.members
+        human_members_after_chunk = [member for member in all_members_after_chunk if not member.bot]
+        
+        print(f"After chunking:")
+        print(f"- All members: {len(all_members_after_chunk)}")
+        print(f"- Human members: {len(human_members_after_chunk)}")
+        
+        if len(human_members_after_chunk) > total_members:
+            members = human_members_after_chunk
+            total_members = len(members)
+            all_members = all_members_after_chunk
+            bot_members = [member for member in all_members_after_chunk if member.bot]
+            human_members = human_members_after_chunk
+            print(f"Updated target members to: {total_members}")
+        
+    except Exception as e:
+        print(f"Failed to chunk guild members: {e}")
+    
+    if total_members == 0:
+        error_embed = discord.Embed(
+            title='❌ メンバーが見つかりません',
+            description=f'**サーバー:** {interaction.guild.name}\n**ロール:** {role.name}',
+            color=0xff0000
+        )
+        error_embed.add_field(
+            name='詳細情報',
+            value=f'**サーバーメンバー数:** {interaction.guild.member_count}\n'
+                  f'**読み込み済みメンバー:** {len(interaction.guild.members)}\n'
+                  f'**人間のメンバー:** {len([m for m in interaction.guild.members if not m.bot])}\n'
+                  f'**Botメンバー:** {len([m for m in interaction.guild.members if m.bot])}',
+            inline=False
+        )
+        error_embed.add_field(
+            name='可能な原因',
+            value='• サーバーにBot以外のメンバーがいない\n'
+                  f'• Botにメンバー一覧の権限がない\n'
+                  f'• メンバーリストの読み込みに失敗',
+            inline=False
+        )
+        
+        try:
+            await interaction.channel.send(embed=error_embed)
+        except:
+            pass
+        return
+
+    status_embed = discord.Embed(
+        title='👥 全メンバーロール付与進行状況',
+        description=f'**ロール:** {role.name}\n**サーバー:** {interaction.guild.name}\n\nメンバーにロールを付与しています...',
+        color=0x0099ff
+    )
+    status_embed.add_field(
+        name='進行状況',
+        value='開始中...',
+        inline=False
+    )
+    status_embed.set_footer(text=f'実行者: {interaction.user.display_name}')
+    
+    try:
+        status_message = await interaction.channel.send(embed=status_embed)
+    except:
+        status_message = None
+
+    members_with_role = 0
+    members_without_role = 0
+    
+    for member in members:
+        if role in member.roles:
+            members_with_role += 1
+        else:
+            members_without_role += 1
+    
+    print(f"Pre-check results:")
+    print(f"- Members with role: {members_with_role}")
+    print(f"- Members without role: {members_without_role}")
+    
+    if members_without_role == 0:
+        early_embed = discord.Embed(
+            title='ℹ️ 全メンバーが既にロールを所持',
+            description=f'**ロール:** {role.name}\n**サーバー:** {interaction.guild.name}\n\n全ての対象メンバー（{total_members}人）が既にこのロールを持っています。',
+            color=0xffaa00
+        )
+        early_embed.add_field(
+            name='📊 確認結果',
+            value=f'**既存所持:** {members_with_role}人\n**付与対象:** {members_without_role}人',
+            inline=False
+        )
+        early_embed.add_field(
+            name='💡 提案',
+            value='• 別のロールを選択してください\n• 特定のメンバーのロールを一度削除してからお試しください\n• これは正常な状態です（問題ではありません）',
+            inline=False
+        )
+        early_embed.set_footer(text='処理は続行されますが、変更は行われません')
+        
+        try:
+            await interaction.channel.send(embed=early_embed)
+        except:
+            pass
+
+    processed_members = 0
+    success_count = 0
+    skip_count = 0
+    error_count = 0
+    
+    print(f"Starting allmember command:")
+    print(f"- Role: {role.name} (ID: {role.id})")
+    print(f"- Guild: {interaction.guild.name} (ID: {interaction.guild.id})")
+    print(f"- Guild member count: {interaction.guild.member_count}")
+    print(f"- All members loaded: {len(all_members)}")
+    print(f"- Bot members: {len(bot_members)}")
+    print(f"- Human members: {len(human_members)}")
+    print(f"- Target members: {total_members}")
+    print(f"- Bot permissions: {interaction.guild.me.guild_permissions}")
+    print(f"- Bot top role: {interaction.guild.me.top_role}")
+    print(f"- Target role position: {role.position}")
+    print(f"- Bot can manage role: {role < interaction.guild.me.top_role}")
+    
+    if len(human_members) > 0:
+        print(f"- First few human members:")
+        for i, member in enumerate(human_members[:5]):
+            print(f"  {i+1}. {member.display_name} ({member.name}) - Has role: {role in member.roles}")
+    else:
+        print("- No human members found in server")
+        print(f"- All members list:")
+        for i, member in enumerate(all_members[:10]):
+            member_type = "Bot" if member.bot else "Human"
+            print(f"  {i+1}. {member.display_name} ({member.name}) - {member_type}")
+    
+    if total_members == 0:
+        print("WARNING: No human members found. This could be due to:")
+        print("1. Server only has bots")
+        print("2. Missing member intents")
+        print("3. Bot hasn't loaded all members yet")
+
+    for member in members:
+        try:
+            if role in member.roles:
+                skip_count += 1
+                print(f"Skipped {member.display_name}: Already has role")
+            else:
+                await member.add_roles(role, reason=f"全メンバーロール付与 - 実行者: {interaction.user.display_name}")
+                
+                await member.reload()
+                if role in member.roles:
+                    success_count += 1
+                    print(f"Successfully added role to {member.display_name}")
+                else:
+                    error_count += 1
+                    print(f"Failed to add role to {member.display_name}: Role not found after assignment")
+                
+        except discord.Forbidden:
+            error_count += 1
+            print(f"Failed to assign role to {member.display_name}: Missing permissions")
+        except discord.HTTPException as e:
+            error_count += 1
+            print(f"Failed to assign role to {member.display_name}: HTTP error - {e}")
+        except Exception as e:
+            error_count += 1
+            print(f"Unexpected error with {member.display_name}: {e}")
+        
+        processed_members += 1
+        
+        if processed_members % 10 == 0 and status_message:
+            try:
+                progress_percentage = (processed_members / total_members) * 100
+                status_embed.clear_fields()
+                status_embed.add_field(
+                    name='進行状況',
+                    value=f'処理済み: {processed_members}/{total_members} ({progress_percentage:.1f}%)\n'
+                          f'✅ 付与成功: {success_count}\n'
+                          f'⏭️ スキップ: {skip_count}\n'
+                          f'❌ エラー: {error_count}',
+                    inline=False
+                )
+                await status_message.edit(embed=status_embed)
+            except Exception as e:
+                print(f"Status update error: {e}")
+                status_message = None
+        
+        if processed_members % 5 == 0:
+            await asyncio.sleep(1)
+
+    if skip_count == total_members and success_count == 0:
+        embed_color = 0xffaa00
+        embed_title = '⚠️ 全メンバーロール付与完了（変更なし）'
+        status_message_text = '全てのメンバーが既に指定されたロールを持っています。'
+    elif success_count > 0:
+        embed_color = 0x00ff00
+        embed_title = '✅ 全メンバーロール付与完了'
+        status_message_text = 'ロール付与処理が完了しました。'
+    else:
+        embed_color = 0xff6600
+        embed_title = '⚠️ 全メンバーロール付与完了（問題あり）'
+        status_message_text = 'ロール付与処理が完了しましたが、問題が発生しました。'
+
+    final_embed = discord.Embed(
+        title=embed_title,
+        description=f'**ロール:** {role.name}\n**サーバー:** {interaction.guild.name}\n\n{status_message_text}',
+        color=embed_color
+    )
+    final_embed.add_field(
+        name='📊 結果統計',
+        value=f'**対象メンバー:** {total_members}人\n'
+              f'**付与成功:** {success_count}人\n'
+              f'**スキップ:** {skip_count}人（既に所持）\n'
+              f'**エラー:** {error_count}人\n'
+              f'**処理済み:** {processed_members}人',
+        inline=False
+    )
+    
+    if total_members > 0:
+        if success_count > 0:
+            success_percentage = (success_count / total_members) * 100
+            final_embed.add_field(
+                name='📈 新規付与率',
+                value=f'{success_percentage:.1f}% ({success_count}/{total_members})',
+                inline=True
+            )
+        
+        if skip_count > 0:
+            skip_percentage = (skip_count / total_members) * 100
+            final_embed.add_field(
+                name='⏭️ 既存所持率',
+                value=f'{skip_percentage:.1f}% ({skip_count}/{total_members})',
+                inline=True
+            )
+    
+    if skip_count == total_members:
+        final_embed.add_field(
+            name='ℹ️ 詳細',
+            value='全てのメンバーが既に指定されたロールを持っているため、変更は行われませんでした。これは正常な状態です。',
+            inline=False
+        )
+    elif success_count > 0:
+        final_embed.add_field(
+            name='✅ 成功',
+            value=f'{success_count}人のメンバーに新しくロールが付与されました。',
+            inline=False
+        )
+    
+    if error_count > 0:
+        final_embed.add_field(
+            name='⚠️ 注意',
+            value=f'{error_count}人のメンバーでエラーが発生しました。権限の問題や一時的な接続エラーが原因の可能性があります。',
+            inline=False
+        )
+    
+    final_embed.set_footer(text=f'実行者: {interaction.user.display_name} | 処理完了')
+    
+    if status_message:
+        try:
+            await status_message.edit(embed=final_embed)
+        except Exception as e:
+            print(f"Final status update error: {e}")
+            try:
+                await interaction.channel.send(embed=final_embed)
+            except Exception as e2:
+                print(f"Failed to send completion message: {e2}")
+    else:
+        try:
+            await interaction.channel.send(embed=final_embed)
+        except Exception as e:
+            print(f"Failed to send completion message: {e}")
+
 COMMAND_HELP.update({
+    'allmember': {
+        'description': '指定したロールをサーバーの全メンバーに付与',
+        'usage': '/allmember <ロール>',
+        'details': 'サーバーの全メンバー（Bot除く）に指定したロールを付与します。既にロールを持っているメンバーはスキップされます。@everyone、管理されたロール、管理者権限を持つロールは付与できません。管理者権限が必要です。'
+    },
+    'allmessage': {
+        'description': 'サーバーの全メッセージを指定したサーバーにコピー',
+        'usage': '/allmessage <転送先サーバーID> [チャンネルID]',
+        'details': 'サーバーの全チャンネル、または指定したチャンネルのメッセージを転送先サーバーにコピーします。チャンネルIDを指定した場合はそのチャンネルのみをコピーします。チャンネルが存在しない場合は自動作成されます。管理者権限が必要です。'
+    },
     'warn': {
         'description': 'ユーザーに警告を与える',
         'usage': '/warn <ユーザー> [理由]',
@@ -2777,19 +3142,22 @@ COMMAND_HELP.update({
         'usage': '/tempmute <ユーザー> <期間> [理由]',
         'details': '指定した期間ユーザーをミュートします。期間は30m（分）、2h（時間）、1d（日）の形式で指定。最大28日まで。メンバータイムアウト権限が必要です。'
     },
-    'setup-vending': {
-        'description': '自動販売機を設置',
-        'usage': '/setup-vending',
-        'details': 'PayPayリンク付きの自動販売機を設置します。購入フローは自動化され、管理者確認後にDMで商品をお渡しします。管理者権限が必要です。'
-    },
     'support-request': {
         'description': 'サポートを要請',
         'usage': '/support-request <内容>',
         'details': 'サポートを要請します。管理者が対応可能かどうか応答し、対応者が決まったらDMで連絡されます。'
+    },
+    'online_check': {
+        'description': 'ボットのオンライン状態を確認',
+        'usage': '/online_check',
+        'details': 'ボットの稼働状況、アップタイム、レイテンシ、接続サーバー数などの詳細情報を表示します。'
+    },
+    'link_bot': {
+        'description': 'ボット参加サーバーの招待リンクを表示',
+        'usage': '!link_bot',
+        'details': 'ボットが参加している全サーバーの招待リンクを一覧表示します。既存の招待リンクがない場合は新規作成します。管理者権限が必要です。'
     }
 })
-
-# Run the application
 if __name__ == '__main__':
     # Start Flask server in a separate thread
     flask_thread = Thread(target=run_flask)
