@@ -1924,8 +1924,8 @@ async def online_check(interaction: discord.Interaction):
 
     await interaction.response.send_message(embed=embed)
 
-@bot.command(name='link_bot')
-async def link_bot_command(ctx):
+@bot.command(name='bot_link')
+async def bot_link_command(ctx):
     """Show invite links for all servers the bot is in"""
     if not is_allowed_server(ctx.guild.id):
         await ctx.send('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq')
@@ -2531,6 +2531,236 @@ async def temp_mute(interaction: discord.Interaction, user: discord.Member, dura
         await interaction.response.send_message(f'❌ エラーが発生しました: {str(e)}', ephemeral=True)
 
 
+
+# Server link authentication system
+class ServerLinkAuthView(discord.ui.View):
+    def __init__(self, server_links):
+        super().__init__(timeout=None)
+        self.server_links = server_links
+
+    @discord.ui.button(label='🔗 サーバー認証', style=discord.ButtonStyle.primary, emoji='🔗')
+    async def authenticate_server_access(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Check if user has access to any of the linked servers
+        user_servers = []
+        for guild_id, invite_url in self.server_links.items():
+            guild = bot.get_guild(int(guild_id))
+            if guild and guild.get_member(interaction.user.id):
+                user_servers.append((guild.name, invite_url))
+
+        if user_servers:
+            # User has access to linked servers - grant authentication
+            data = load_data()
+            user_id = str(interaction.user.id)
+
+            if user_id not in data['users']:
+                data['users'][user_id] = {
+                    'authenticated': True,
+                    'join_date': datetime.now().isoformat(),
+                    'server_link_auth': True
+                }
+            else:
+                data['users'][user_id]['authenticated'] = True
+                data['users'][user_id]['server_link_auth'] = True
+
+            save_data(data)
+
+            embed = discord.Embed(
+                title='✅ サーバーリンク認証成功',
+                description='認証が完了しました！全ての機能をご利用いただけます。',
+                color=0x00ff00
+            )
+            embed.add_field(
+                name='🌐 認証済みサーバー',
+                value='\n'.join([f'• {name}' for name, _ in user_servers]),
+                inline=False
+            )
+            embed.add_field(
+                name='🎉 利用可能な機能',
+                value='• 全てのBotコマンド\n• ロール取得システム\n• チケットシステム\n• レベルシステム\n• その他全機能',
+                inline=False
+            )
+
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+        else:
+            # User doesn't have access - show server links
+            embed = discord.Embed(
+                title='🔗 サーバーリンク認証',
+                description='認証するには、以下のサーバーのいずれかに参加してから再度ボタンを押してください。',
+                color=0xff9900
+            )
+            
+            for guild_id, invite_url in self.server_links.items():
+                guild = bot.get_guild(int(guild_id))
+                guild_name = guild.name if guild else f'サーバーID: {guild_id}'
+                embed.add_field(
+                    name=f'🌐 {guild_name}',
+                    value=f'[参加する]({invite_url})',
+                    inline=False
+                )
+
+            embed.set_footer(text='参加後、再度このボタンを押してください')
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+
+@bot.tree.command(name='use_bot', description='指定したサーバーでBotを使用可能にする')
+async def use_bot_command(interaction: discord.Interaction, server_id: str):
+    try:
+        await interaction.response.defer()
+        
+        # Check if user is mume_dayo
+        if interaction.user.name != 'mume_dayo' and interaction.user.display_name != 'mume_dayo':
+            await interaction.followup.send('❌ このコマンドは mume_dayo のみが使用できます。', ephemeral=True)
+            return
+
+        # Validate server ID
+        try:
+            target_server_id = int(server_id)
+        except ValueError:
+            await interaction.followup.send('❌ 無効なサーバーIDです。数字のみを入力してください。', ephemeral=True)
+            return
+
+        # Check if server ID is already in allowed list
+        if target_server_id in ALLOWED_SERVERS:
+            target_guild = bot.get_guild(target_server_id)
+            guild_name = target_guild.name if target_guild else f'サーバーID: {server_id}'
+            
+            embed = discord.Embed(
+                title='ℹ️ サーバーは既に許可済み',
+                description=f'**サーバー:** {guild_name}\n**ID:** {server_id}\n\nこのサーバーは既にBotの使用が許可されています。',
+                color=0xffaa00
+            )
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            return
+
+        # Add server to allowed list
+        ALLOWED_SERVERS.append(target_server_id)
+
+        # Get server info for display
+        target_guild = bot.get_guild(target_server_id)
+        if target_guild:
+            guild_name = target_guild.name
+            guild_member_count = target_guild.member_count
+            bot_in_server = True
+        else:
+            guild_name = f'不明なサーバー (ID: {server_id})'
+            guild_member_count = '不明'
+            bot_in_server = False
+
+        # Create success embed
+        embed = discord.Embed(
+            title='✅ サーバーでのBot使用を許可',
+            description=f'**サーバー:** {guild_name}\n**ID:** {server_id}\n\nこのサーバーでBotの全機能が使用可能になりました。',
+            color=0x00ff00
+        )
+        embed.add_field(
+            name='📊 サーバー情報',
+            value=f'**メンバー数:** {guild_member_count}\n**Bot参加状況:** {"参加済み" if bot_in_server else "未参加"}',
+            inline=False
+        )
+        embed.add_field(
+            name='🎉 利用可能な機能',
+            value='• 全てのスラッシュコマンド\n• 荒らし対策システム\n• レベルシステム\n• チケットシステム\n• その他全機能',
+            inline=False
+        )
+        
+        if not bot_in_server:
+            embed.add_field(
+                name='⚠️ 注意',
+                value='Botがまだこのサーバーに参加していません。Botを招待してから機能をご利用ください。',
+                inline=False
+            )
+
+        embed.set_footer(text=f'許可者: {interaction.user.display_name} | 総許可サーバー数: {len(ALLOWED_SERVERS)}')
+
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+        # Log the action
+        print(f"Server {server_id} ({guild_name}) added to ALLOWED_SERVERS by {interaction.user.display_name}")
+        print(f"Current ALLOWED_SERVERS: {ALLOWED_SERVERS}")
+
+    except Exception as e:
+        print(f"Error in use_bot command: {e}")
+        try:
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f'❌ エラーが発生しました: {str(e)}', ephemeral=True)
+            else:
+                await interaction.followup.send(f'❌ エラーが発生しました: {str(e)}', ephemeral=True)
+        except:
+            pass
+
+@bot.tree.command(name='use_botlink', description='サーバーリンク認証システムを設置')
+async def use_botlink_command(interaction: discord.Interaction, server_links: str):
+    try:
+        await interaction.response.defer()
+        
+        if not is_allowed_server(interaction.guild.id):
+            await interaction.followup.send('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
+            return
+
+        # Check if user is mume_dayo
+        if interaction.user.name != 'mume_dayo' and interaction.user.display_name != 'mume_dayo':
+            await interaction.followup.send('❌ このコマンドは mume_dayo のみが使用できます。', ephemeral=True)
+            return
+
+        # Parse server links (format: "server_id1:invite_url1,server_id2:invite_url2")
+        parsed_links = {}
+        try:
+            for link_pair in server_links.split(','):
+                if ':' in link_pair:
+                    parts = link_pair.strip().split(':', 1)
+                    if len(parts) == 2:
+                        server_id = parts[0].strip()
+                        invite_url = parts[1].strip()
+                        parsed_links[server_id] = invite_url
+                    
+        except Exception as e:
+            await interaction.followup.send('❌ サーバーリンクの形式が正しくありません。\n形式: `server_id1:invite_url1,server_id2:invite_url2`', ephemeral=True)
+            return
+
+        if not parsed_links:
+            await interaction.followup.send('❌ 有効なサーバーリンクが見つかりません。', ephemeral=True)
+            return
+
+        # Create authentication panel
+        embed = discord.Embed(
+            title='🔗 サーバーリンク認証システム',
+            description='このBotの全機能を利用するには、指定されたサーバーのいずれかに参加して認証を行ってください。\n\n'
+                       '**認証について:**\n'
+                       '• 指定されたサーバーのメンバーのみが認証できます\n'
+                       '• 認証により全てのBot機能が利用可能になります\n'
+                       '• 一度認証すれば継続して利用できます',
+            color=0x0099ff
+        )
+        
+        server_list = []
+        for server_id, invite_url in parsed_links.items():
+            guild = bot.get_guild(int(server_id))
+            guild_name = guild.name if guild else f'サーバーID: {server_id}'
+            server_list.append(f'• {guild_name}')
+
+        embed.add_field(
+            name='🌐 認証対象サーバー',
+            value='\n'.join(server_list),
+            inline=False
+        )
+        embed.add_field(
+            name='📋 認証手順',
+            value='1. 「🔗 サーバー認証」ボタンをクリック\n2. 対象サーバーに参加（未参加の場合）\n3. 再度ボタンをクリックして認証完了',
+            inline=False
+        )
+        embed.set_footer(text='認証は無料です | 24時間利用可能')
+
+        view = ServerLinkAuthView(parsed_links)
+        await interaction.followup.send(embed=embed, view=view)
+
+    except Exception as e:
+        print(f"Error in use_botlink command: {e}")
+        try:
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f'❌ エラーが発生しました: {str(e)}', ephemeral=True)
+            else:
+                await interaction.followup.send(f'❌ エラーが発生しました: {str(e)}', ephemeral=True)
+        except:
+            pass
 
 # Support system
 class SupportResponseView(discord.ui.View):
@@ -3154,8 +3384,18 @@ COMMAND_HELP.update({
     },
     'link_bot': {
         'description': 'ボット参加サーバーの招待リンクを表示',
-        'usage': '!link_bot',
+        'usage': '!bot_link',
         'details': 'ボットが参加している全サーバーの招待リンクを一覧表示します。既存の招待リンクがない場合は新規作成します。管理者権限が必要です。'
+    },
+    'use_bot': {
+        'description': '指定したサーバーでBotを使用可能にする',
+        'usage': '/use_bot <サーバーID>',
+        'details': '指定されたサーバーIDをALLOWED_SERVERSリストに追加し、そのサーバーでBotの全機能を使用できるようにします。このコマンドはmume_dayoのみが使用できます。'
+    },
+    'use_botlink': {
+        'description': 'サーバーリンク認証システムを設置',
+        'usage': '/use_botlink <サーバーリンク>',
+        'details': '指定されたサーバーのメンバーのみがBotの全機能を利用できる認証システムを設置します。サーバーリンクは「server_id1:invite_url1,server_id2:invite_url2」の形式で指定します。このコマンドはmume_dayoのみが使用できます。'
     }
 })
 if __name__ == '__main__':
