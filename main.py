@@ -237,10 +237,6 @@ class RoleSelectionView(discord.ui.View):
 
     async def assign_role(self, interaction, role):
         try:
-            if not interaction.user.guild_permissions.administrator:
-                await interaction.response.send_message('❌ ロール取得は管理者のみが利用できます。', ephemeral=True)
-                return
-
             if role in interaction.user.roles:
                 await interaction.response.send_message(f'❌ あなたは既に {role.name} ロールを持っています。', ephemeral=True)
                 return
@@ -274,10 +270,6 @@ class SpecificRoleView(discord.ui.View):
 
     @discord.ui.button(label='ろーるをしゅとく！', style=discord.ButtonStyle.primary)
     async def get_role_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message('❌ ロール取得は管理者のみが利用できます。', ephemeral=True)
-            return
-
         data = load_data()
         user_id = str(interaction.user.id)
 
@@ -310,10 +302,6 @@ class PublicAuthView(discord.ui.View):
 
     @discord.ui.button(label='認証する', style=discord.ButtonStyle.primary)
     async def authenticate_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message('❌ 認証は管理者のみが利用できます。', ephemeral=True)
-            return
-
         data = load_data()
         user_id = str(interaction.user.id)
 
