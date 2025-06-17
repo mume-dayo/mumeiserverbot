@@ -6,8 +6,45 @@ from datetime import datetime
 from flask import Flask
 from threading import Thread
 import time
+import firebase_admin
+from firebase_admin import credentials, firestore
 
 app = Flask(__name__)
+
+# Firebase初期化
+def initialize_firebase():
+    if not firebase_admin._apps:
+        try:
+            # Firebaseプロジェクト設定をハードコード
+            firebase_config = {
+                "type": "service_account",
+                "project_id": "mumeiserverbot",
+                "private_key_id": "342f281fe868a2a52d8454404b51969371620897",
+                "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDTt7wzGLv28i4P\nPcH5u2WZlrWaXu7xB2xLgMsjZ74B+4uP8+H3aXDoaEiKMJd6XAWU+qqRav54Q3UX\nRVFTx9I0yIKZCyXNvumZRx3IYmnMbhBKB908sqaIxtPgkCVq3MiObnSMq8oY/C3h\nK5Q1xXBsqu259ONT/egev57mzZNZFlkQWfTjsr8nq4Hb5yaek7XeH70s9yqBimp8\nLXBlpVxpeZ8YiHM13BlMXfW9abtehwYZVHp7ZZ+mvlX2/LQ/pQEUKgnCci1L6wix\nw5snNSbxlb1LEVIMzmxua3X8CcokNbIW6VMJUSUv+4PtgztojjzA4fUIG6JFF9+u\ncgiTi/GTAgMBAAECggEAMK3Lt2HmAfMQFRAJlB56z1QgIETYopGm3DtaOaNGRFVu\ncuRL3eOgAsfLef6PLaKP4/+4jSPxK3yzJO0atG06z0kVAhRWllZhho0b83FxSwA5\nfZQOUcDv2n4AxF7QQ6BM+ra51IhBOPpuoBmxg6WIYmvwqfN8+1hjcQJ1CjNVQEOg\nSaY9EF//7du+hVBrPPmwBq/zi1Spx8yoj2/ZAEZlUoGU/6672nBpL6pEesyvagf3\n++0dE1J97VjdtU1QSS5uA10sZECuJTNjEWExMZ4mvV+0JaWJLGXmrGxOIof2HvVF\n50z2FpDTFe8MOPrJd4KtXDh+Lcv5bQo8HytNDVcm5QKBgQD7cnHx7vJh/WiCH6UI\np3letLyD/n3T7JjNg6CXgXicVWK1910Lx3t7Xr2yW3wtiwhwlFKpTqtoroAUa6Ot\nkIk9OTC+MHN8OvNldFrgzYI9quCA3Ta4vn72XIjR+vlsivlWTE6j5eDFXsK1d8wD\n59JwJgMc3VFalh5BJ0TO9LtVbwKBgQDXjSEOqNwv1zL69eC1kbJBv8IjLzNzpGwB\nQX6PermufOnsaZcOA8IHufi0ty9S2EmRwh172R97f3Z6/6ERG14jWsEIEL/MwIPV\n42eujgCc/H36jElnmv9zLRxVpz2yyq0BzIsU4ImVYSSE1CQO61z1upDs+U6NoJdR\nUqF4GGb8HQKBgQCOaFHKYLcb8kZHNB7m2NrvXVNLOk4PQXeFJaBFTkl92QoP3unu\nqurvg0fShOe+b3i3Mfni87A2mGXnqtLHkQ15BDPr80rkuApzkkOKADpcLLP7p82/\nMfx8EQpYSlkLNWZjjtIXFzGG9tU1q4R7TccsRwsKRPo3YL//zHq273pNtwKBgHYD\nPasSBmNm9fFyttGR8D+RJlAvIoNY7Q0O96TEc2610zjtYpd4tT2XszP160H3Sugz\nmALbkCIEWjDjTiLYkgTXRkINMYV/jW6IL5bhBjLtBmgrcHD56ov7kbzPcLc3wdrv\nSuJmQM15Pw4+O3OzptSejYRAxqJB3zbV/7OJ4LB9AoGALOOqmYkU/QbxvPNkygfq\nmG8aVC0/TfcGmyj3isMfni4aDBdhW2y5hmoCO72Cs5pGtTC7XYtV+SV+PZPREdsJ\nQYIT3YAorJoltRixV6gZaVEc4uVyu3mLa5xtjYqUvZ05u6Dmvn3hfNBuElZg/FCu\nByUu049uJv319WgTR8Ew+PQ=\n-----END PRIVATE KEY-----\n",
+                "client_email": "firebase-adminsdk-fbsvc@mumeiserverbot.iam.gserviceaccount.com",
+                "client_id": "103058932410668247302",
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": "https://oauth2.googleapis.com/token",
+                "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+                "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-fbsvc%40mumeiserverbot.iam.gserviceaccount.com",
+                "universe_domain": "googleapis.com"
+            }
+            
+            # Firebase Admin SDK用の設定として初期化
+            cred = credentials.Certificate(firebase_config)
+            firebase_admin.initialize_app(cred, {
+                'storageBucket': 'mumeiserverbot.firebasestorage.app'
+            })
+            print("Firebase初期化成功")
+            return firestore.client()
+        except Exception as e:
+            print(f"Firebase初期化エラー: {e}")
+            return None
+    else:
+        return firestore.client()
+
+# Firebase初期化
+db = initialize_firebase()
 
 @app.route('/')
 def home():
@@ -16,6 +53,1341 @@ def home():
 @app.route('/health')
 def health():
     return {"status": "healthy", "bot": "running"}
+
+@app.route('/admin')
+def admin_panel():
+    return '''
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bot管理パネル</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #fff;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.1);
+            padding: 30px;
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px rgba(31, 38, 135, 0.37);
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .stat-card {
+            background: rgba(255, 255, 255, 0.2);
+            padding: 20px;
+            border-radius: 10px;
+            backdrop-filter: blur(5px);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+        }
+        .stat-card h3 {
+            margin-top: 0;
+            color: #fff;
+            border-bottom: 2px solid #fff;
+            padding-bottom: 10px;
+        }
+        .control-panel {
+            background: rgba(255, 255, 255, 0.2);
+            padding: 20px;
+            border-radius: 10px;
+            margin-top: 20px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input, select {
+            width: 100%;
+            padding: 10px;
+            border: none;
+            border-radius: 5px;
+            background: rgba(255, 255, 255, 0.9);
+            color: #333;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            padding: 12px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-right: 10px;
+            margin-bottom: 10px;
+            font-weight: bold;
+            transition: all 0.3s;
+        }
+        button:hover {
+            background: #45a049;
+            transform: translateY(-2px);
+        }
+        .danger-btn {
+            background: #f44336;
+        }
+        .danger-btn:hover {
+            background: #da190b;
+        }
+        .warning-btn {
+            background: #ff9800;
+        }
+        .warning-btn:hover {
+            background: #e68900;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+            background: rgba(255, 255, 255, 0.1);
+        }
+        th, td {
+            padding: 10px;
+            text-align: left;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.3);
+        }
+        th {
+            background: rgba(255, 255, 255, 0.2);
+        }
+        .status-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 5px;
+        }
+        .online { background: #4CAF50; }
+        .offline { background: #f44336; }
+        .idle { background: #ff9800; }
+        
+        .btn-settings {
+            background: #2196F3;
+            color: white;
+            padding: 8px 12px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.3s;
+        }
+        .btn-settings:hover {
+            background: #1976D2;
+            transform: translateY(-1px);
+        }
+        
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        
+        .modal-content {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            padding: 0;
+            border-radius: 15px;
+            max-width: 600px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .modal-header {
+            padding: 20px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .modal-header h3 {
+            margin: 0;
+            color: #fff;
+        }
+        
+        .close-btn {
+            background: none;
+            border: none;
+            color: #fff;
+            font-size: 24px;
+            cursor: pointer;
+            padding: 0;
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .modal-body {
+            padding: 20px;
+        }
+        
+        .modal-footer {
+            padding: 20px;
+            border-top: 1px solid rgba(255, 255, 255, 0.2);
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+        
+        .settings-section {
+            margin-bottom: 25px;
+            padding: 15px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .settings-section h4 {
+            margin-top: 0;
+            margin-bottom: 15px;
+            color: #fff;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+            padding-bottom: 8px;
+        }
+        
+        .btn-primary {
+            background: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        
+        .btn-warning {
+            background: #ff9800;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        
+        .btn-secondary {
+            background: #666;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        
+        .form-group small {
+            display: block;
+            margin-top: 5px;
+            color: #ccc;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🤖 Bot管理パネル</h1>
+        
+        <div class="stats-grid" id="statsGrid">
+            <!-- Statistics will be loaded here -->
+        </div>
+        
+        <div class="control-panel">
+            <h3>📊 リアルタイム統計</h3>
+            <button onclick="refreshStats()">🔄 統計を更新</button>
+            <button onclick="exportData()" class="warning-btn">📥 データエクスポート</button>
+            <button onclick="clearSpamData()" class="danger-btn">🗑️ スパムデータクリア</button>
+            
+            <div class="form-group">
+                <h4>⚙️ 設定管理</h4>
+                <label>スパム検知設定:</label>
+                <input type="number" id="spamThreshold" placeholder="連投検知回数 (デフォルト: 3)" min="1" max="10">
+                <input type="number" id="spamTimeWindow" placeholder="時間窓 (秒, デフォルト: 30)" min="5" max="300">
+                <button onclick="updateSpamSettings()">設定を更新</button>
+            </div>
+            
+            <div class="form-group">
+                <h4>👥 ユーザー管理</h4>
+                <input type="text" id="userId" placeholder="ユーザーID">
+                <input type="text" id="guildId" placeholder="サーバーID">
+                <input type="number" id="warnCount" placeholder="警告回数" min="0" max="10">
+                <button onclick="updateUserWarnings()">警告回数を更新</button>
+                <button onclick="resetUserLevel()" class="warning-btn">レベルリセット</button>
+            </div>
+            
+            <div class="form-group">
+                <h4>🌐 サーバー管理</h4>
+                <input type="text" id="serverId" placeholder="サーバーID">
+                <button onclick="addAllowedServer()">許可サーバーに追加</button>
+                <button onclick="removeAllowedServer()" class="danger-btn">許可サーバーから削除</button>
+                <button onclick="leaveServer()" class="danger-btn">サーバーから退出</button>
+            </div>
+        </div>
+        
+        <div class="control-panel">
+            <h3>🌐 サーバー管理</h3>
+            <div id="serverManagement">
+                <!-- Server management will be loaded here -->
+            </div>
+        </div>
+        
+        <div class="control-panel">
+            <h3>📈 詳細統計</h3>
+            <div id="detailedStats">
+                <!-- Detailed statistics will be loaded here -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function refreshStats() {
+            fetch('/admin/stats')
+                .then(response => response.json())
+                .then(data => {
+                    updateStatsDisplay(data);
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('統計の取得に失敗しました');
+                });
+        }
+
+        function showServerSettings(serverId, serverName) {
+            fetch(`/admin/server_settings/${serverId}`)
+                .then(response => response.json())
+                .then(data => {
+                    const modal = createServerSettingsModal(serverId, serverName, data);
+                    document.body.appendChild(modal);
+                })
+                .catch(error => {
+                    alert('サーバー設定の取得に失敗しました: ' + error);
+                });
+        }
+
+        function createServerSettingsModal(serverId, serverName, settings) {
+            const modal = document.createElement('div');
+            modal.className = 'modal-overlay';
+            modal.innerHTML = `
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3>🌐 ${serverName} - サーバー設定</h3>
+                        <button class="close-btn" onclick="closeModal(this)">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="settings-section">
+                            <h4>🛡️ 連投・スパム対策設定</h4>
+                            <div class="form-group">
+                                <label>連投検知閾値 (回数):</label>
+                                <input type="number" id="spamThreshold_${serverId}" value="${settings.spam_threshold || 3}" min="2" max="10">
+                                <small>同じメッセージを何回送信したら連投と判定するか</small>
+                            </div>
+                            <div class="form-group">
+                                <label>時間窓 (秒):</label>
+                                <input type="number" id="timeWindow_${serverId}" value="${settings.time_window || 30}" min="10" max="300">
+                                <small>何秒以内の連投を検知するか</small>
+                            </div>
+                            <div class="form-group">
+                                <label>タイムアウト時間 (分):</label>
+                                <input type="number" id="timeoutDuration_${serverId}" value="${settings.timeout_duration || 60}" min="1" max="1440">
+                                <small>連投時のタイムアウト時間</small>
+                            </div>
+                            <div class="form-group">
+                                <label>
+                                    <input type="checkbox" id="deleteMessages_${serverId}" ${settings.delete_messages !== false ? 'checked' : ''}>
+                                    連投メッセージを自動削除
+                                </label>
+                            </div>
+                            <div class="form-group">
+                                <label>
+                                    <input type="checkbox" id="enableAntispam_${serverId}" ${settings.enable_antispam !== false ? 'checked' : ''}>
+                                    連投対策を有効化
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <div class="settings-section">
+                            <h4>🤖 Bot対策設定</h4>
+                            <div class="form-group">
+                                <label>Bot連投検知閾値 (回数):</label>
+                                <input type="number" id="botSpamThreshold_${serverId}" value="${settings.bot_spam_threshold || 2}" min="1" max="10">
+                                <small>Botが何回連続でメッセージを送信したら対策するか</small>
+                            </div>
+                            <div class="form-group">
+                                <label>
+                                    <input type="checkbox" id="autoBanBots_${serverId}" ${settings.auto_ban_bots === true ? 'checked' : ''}>
+                                    悪質Botを自動Ban
+                                </label>
+                            </div>
+                            <div class="form-group">
+                                <label>
+                                    <input type="checkbox" id="enableBotProtection_${serverId}" ${settings.enable_bot_protection !== false ? 'checked' : ''}>
+                                    Bot対策を有効化
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="settings-section">
+                            <h4>📝 ログ設定</h4>
+                            <div class="form-group">
+                                <label>
+                                    <input type="checkbox" id="logSpamDetection_${serverId}" ${settings.log_spam_detection !== false ? 'checked' : ''}>
+                                    スパム検知をログに記録
+                                </label>
+                            </div>
+                            <div class="form-group">
+                                <label>
+                                    <input type="checkbox" id="dmNotifyUser_${serverId}" ${settings.dm_notify_user === true ? 'checked' : ''}>
+                                    対策実行時にユーザーにDM通知
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="settings-section">
+                            <h4>⚠️ 除外設定</h4>
+                            <div class="form-group">
+                                <label>除外ロール (ロール名をカンマ区切りで入力):</label>
+                                <input type="text" id="excludedRoles_${serverId}" value="${(settings.excluded_roles || []).join(', ')}" placeholder="例: 管理者, モデレーター">
+                                <small>これらのロールを持つユーザーは連投対策の対象外</small>
+                            </div>
+                            <div class="form-group">
+                                <label>除外チャンネル (チャンネル名をカンマ区切りで入力):</label>
+                                <input type="text" id="excludedChannels_${serverId}" value="${(settings.excluded_channels || []).join(', ')}" placeholder="例: スパム可, テスト">
+                                <small>これらのチャンネルでは連投対策を無効化</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button onclick="saveServerSettings('${serverId}')" class="btn-primary">💾 設定を保存</button>
+                        <button onclick="resetServerSettings('${serverId}')" class="btn-warning">🔄 デフォルトに戻す</button>
+                        <button onclick="closeModal(this)" class="btn-secondary">❌ キャンセル</button>
+                    </div>
+                </div>
+            `;
+            return modal;
+        }
+
+        function saveServerSettings(serverId) {
+            const settings = {
+                spam_threshold: parseInt(document.getElementById(`spamThreshold_${serverId}`).value),
+                time_window: parseInt(document.getElementById(`timeWindow_${serverId}`).value),
+                timeout_duration: parseInt(document.getElementById(`timeoutDuration_${serverId}`).value),
+                delete_messages: document.getElementById(`deleteMessages_${serverId}`).checked,
+                enable_antispam: document.getElementById(`enableAntispam_${serverId}`).checked,
+                bot_spam_threshold: parseInt(document.getElementById(`botSpamThreshold_${serverId}`).value),
+                auto_ban_bots: document.getElementById(`autoBanBots_${serverId}`).checked,
+                enable_bot_protection: document.getElementById(`enableBotProtection_${serverId}`).checked,
+                log_spam_detection: document.getElementById(`logSpamDetection_${serverId}`).checked,
+                dm_notify_user: document.getElementById(`dmNotifyUser_${serverId}`).checked,
+                excluded_roles: document.getElementById(`excludedRoles_${serverId}`).value.split(',').map(s => s.trim()).filter(s => s),
+                excluded_channels: document.getElementById(`excludedChannels_${serverId}`).value.split(',').map(s => s.trim()).filter(s => s)
+            };
+
+            fetch(`/admin/server_settings/${serverId}`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(settings)
+            })
+            .then(response => response.json())
+            .then(data => {
+                alert(data.message);
+                if (data.message.includes('成功')) {
+                    closeModal(document.querySelector('.modal-overlay'));
+                    refreshStats();
+                }
+            })
+            .catch(error => {
+                alert('設定の保存に失敗しました: ' + error);
+            });
+        }
+
+        function resetServerSettings(serverId) {
+            if (!confirm('このサーバーの設定をデフォルトに戻しますか？')) {
+                return;
+            }
+
+            fetch(`/admin/server_settings/${serverId}/reset`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'}
+            })
+            .then(response => response.json())
+            .then(data => {
+                alert(data.message);
+                closeModal(document.querySelector('.modal-overlay'));
+                refreshStats();
+            })
+            .catch(error => {
+                alert('設定のリセットに失敗しました: ' + error);
+            });
+        }
+
+        function closeModal(element) {
+            const modal = element.closest('.modal-overlay');
+            if (modal) {
+                modal.remove();
+            }
+        }
+
+        function updateStatsDisplay(data) {
+            const statsGrid = document.getElementById('statsGrid');
+            statsGrid.innerHTML = `
+                <div class="stat-card">
+                    <h3>🌐 サーバー統計</h3>
+                    <p><strong>参加サーバー数:</strong> ${data.server_count}</p>
+                    <p><strong>許可サーバー数:</strong> ${data.allowed_servers}</p>
+                    <p><strong>総メンバー数:</strong> ${data.total_members}</p>
+                    <p><strong>稼働時間:</strong> ${data.uptime}</p>
+                </div>
+                <div class="stat-card">
+                    <h3>🛡️ 荒らし対策統計</h3>
+                    <p><strong>監視中ユーザー:</strong> ${data.monitored_users}</p>
+                    <p><strong>追跡中Bot:</strong> ${data.tracked_bots}</p>
+                    <p><strong>今日の検知数:</strong> ${data.spam_detections_today}</p>
+                    <p><strong>総検知数:</strong> ${data.total_spam_detections}</p>
+                </div>
+                <div class="stat-card">
+                    <h3>📊 メッセージ統計</h3>
+                    <p><strong>今日の処理数:</strong> ${data.messages_today}</p>
+                    <p><strong>総処理数:</strong> ${data.total_messages}</p>
+                    <p><strong>平均/時:</strong> ${data.avg_messages_per_hour}</p>
+                    <p><strong>レイテンシ:</strong> ${data.latency}ms</p>
+                </div>
+                <div class="stat-card">
+                    <h3>⚠️ 警告統計</h3>
+                    <p><strong>総警告数:</strong> ${data.total_warnings}</p>
+                    <p><strong>今月の警告:</strong> ${data.warnings_this_month}</p>
+                    <p><strong>Ban実行数:</strong> ${data.total_bans}</p>
+                    <p><strong>アクティブタイムアウト:</strong> ${data.active_timeouts}</p>
+                </div>
+                <div class="stat-card">
+                    <h3>🎮 機能利用統計</h3>
+                    <p><strong>チケット作成数:</strong> ${data.tickets_created}</p>
+                    <p><strong>投票作成数:</strong> ${data.polls_created}</p>
+                    <p><strong>レベルアップ数:</strong> ${data.level_ups}</p>
+                    <p><strong>ロール付与数:</strong> ${data.roles_assigned}</p>
+                </div>
+                <div class="stat-card">
+                    <h3>🔧 システム情報</h3>
+                    <p><strong>Bot状態:</strong> <span class="status-indicator online"></span>オンライン</p>
+                    <p><strong>メモリ使用量:</strong> ${data.memory_usage}MB</p>
+                    <p><strong>CPU使用率:</strong> ${data.cpu_usage}%</p>
+                    <p><strong>最終再起動:</strong> ${data.last_restart}</p>
+                </div>
+            `;
+
+            const serverManagement = document.getElementById('serverManagement');
+            serverManagement.innerHTML = `
+                <h4>🌐 Bot参加サーバー一覧 (${data.all_servers.length}サーバー)</h4>
+                <table>
+                    <tr>
+                        <th>サーバー名</th>
+                        <th>サーバーID</th>
+                        <th>メンバー数</th>
+                        <th>オーナー</th>
+                        <th>作成日</th>
+                        <th>許可状態</th>
+                        <th>Bot権限</th>
+                        <th>操作</th>
+                    </tr>
+                    ${data.all_servers.map(server => 
+                        `<tr>
+                            <td>${server.name}</td>
+                            <td><code>${server.id}</code></td>
+                            <td>${server.members}</td>
+                            <td>${server.owner}</td>
+                            <td>${server.created}</td>
+                            <td>
+                                <span class="status-indicator ${server.is_allowed ? 'online' : 'offline'}"></span>
+                                ${server.is_allowed ? '許可済み' : '未許可'}
+                            </td>
+                            <td>${server.bot_permissions}</td>
+                            <td>
+                                <button onclick="showServerSettings('${server.id}', '${server.name.replace(/'/g, '\\\'')}')" class="btn-settings" style="margin:2px;">⚙️ 設定</button><br>
+                                <button onclick="leaveSpecificServer('${server.id}')" class="danger-btn" style="margin:2px;">離脱</button>
+                                ${!server.is_allowed ? 
+                                    `<button onclick="allowServer('${server.id}')" style="margin:2px;">許可</button>` : 
+                                    `<button onclick="disallowServer('${server.id}')" class="warning-btn" style="margin:2px;">許可削除</button>`
+                                }
+                            </td>
+                        </tr>`
+                    ).join('')}
+                </table>
+            `;
+
+            const detailedStats = document.getElementById('detailedStats');
+            detailedStats.innerHTML = `
+                <h4>📋 上位アクティブサーバー</h4>
+                <table>
+                    <tr><th>サーバー名</th><th>メンバー数</th><th>メッセージ数</th><th>警告数</th></tr>
+                    ${data.top_servers.map(server => 
+                        `<tr><td>${server.name}</td><td>${server.members}</td><td>${server.messages}</td><td>${server.warnings}</td></tr>`
+                    ).join('')}
+                </table>
+                
+                <h4>⚠️ 最近の警告ユーザー</h4>
+                <table>
+                    <tr><th>ユーザー名</th><th>サーバー</th><th>警告数</th><th>最終警告</th></tr>
+                    ${data.recent_warnings.map(warn => 
+                        `<tr><td>${warn.user}</td><td>${warn.server}</td><td>${warn.count}</td><td>${warn.last_warning}</td></tr>`
+                    ).join('')}
+                </table>
+            `;
+        }
+
+        function updateSpamSettings() {
+            const threshold = document.getElementById('spamThreshold').value;
+            const timeWindow = document.getElementById('spamTimeWindow').value;
+            
+            fetch('/admin/update_spam_settings', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({threshold: threshold, time_window: timeWindow})
+            })
+            .then(response => response.json())
+            .then(data => {
+                alert(data.message);
+                refreshStats();
+            });
+        }
+
+        function updateUserWarnings() {
+            const userId = document.getElementById('userId').value;
+            const guildId = document.getElementById('guildId').value;
+            const warnCount = document.getElementById('warnCount').value;
+            
+            if (!userId || !guildId) {
+                alert('ユーザーIDとサーバーIDを入力してください');
+                return;
+            }
+            
+            fetch('/admin/update_user_warnings', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({user_id: userId, guild_id: guildId, warn_count: warnCount})
+            })
+            .then(response => response.json())
+            .then(data => {
+                alert(data.message);
+                refreshStats();
+            });
+        }
+
+        function resetUserLevel() {
+            const userId = document.getElementById('userId').value;
+            const guildId = document.getElementById('guildId').value;
+            
+            if (!userId || !guildId) {
+                alert('ユーザーIDとサーバーIDを入力してください');
+                return;
+            }
+            
+            if (!confirm('本当にこのユーザーのレベルをリセットしますか？')) {
+                return;
+            }
+            
+            fetch('/admin/reset_user_level', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({user_id: userId, guild_id: guildId})
+            })
+            .then(response => response.json())
+            .then(data => {
+                alert(data.message);
+            });
+        }
+
+        function addAllowedServer() {
+            const serverId = document.getElementById('serverId').value;
+            
+            if (!serverId) {
+                alert('サーバーIDを入力してください');
+                return;
+            }
+            
+            fetch('/admin/add_allowed_server', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({server_id: serverId})
+            })
+            .then(response => response.json())
+            .then(data => {
+                alert(data.message);
+                refreshStats();
+            });
+        }
+
+        function removeAllowedServer() {
+            const serverId = document.getElementById('serverId').value;
+            
+            if (!serverId) {
+                alert('サーバーIDを入力してください');
+                return;
+            }
+            
+            if (!confirm('本当にこのサーバーを許可リストから削除しますか？')) {
+                return;
+            }
+            
+            fetch('/admin/remove_allowed_server', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({server_id: serverId})
+            })
+            .then(response => response.json())
+            .then(data => {
+                alert(data.message);
+                refreshStats();
+            });
+        }
+
+        function leaveServer() {
+            const serverId = document.getElementById('serverId').value;
+            
+            if (!serverId) {
+                alert('サーバーIDを入力してください');
+                return;
+            }
+            
+            if (!confirm('本当にこのサーバーから退出しますか？この操作は取り消せません。')) {
+                return;
+            }
+            
+            fetch('/admin/leave_server', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({server_id: serverId})
+            })
+            .then(response => response.json())
+            .then(data => {
+                alert(data.message);
+                refreshStats();
+            });
+        }
+
+        function clearSpamData() {
+            if (!confirm('本当にスパムデータをクリアしますか？')) {
+                return;
+            }
+            
+            fetch('/admin/clear_spam_data', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({})
+            })
+            .then(response => response.json())
+            .then(data => {
+                alert(data.message);
+                refreshStats();
+            });
+        }
+
+        function exportData() {
+            fetch('/admin/export_data')
+                .then(response => response.blob())
+                .then(blob => {
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.style.display = 'none';
+                    a.href = url;
+                    a.download = 'bot_data_export.json';
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                });
+        }
+
+        function leaveSpecificServer(serverId) {
+            if (!confirm(`本当にサーバーID: ${serverId} から退出しますか？この操作は取り消せません。`)) {
+                return;
+            }
+            
+            fetch('/admin/leave_server', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({server_id: serverId})
+            })
+            .then(response => response.json())
+            .then(data => {
+                alert(data.message);
+                refreshStats();
+            })
+            .catch(error => {
+                alert('エラーが発生しました: ' + error);
+            });
+        }
+
+        function allowServer(serverId) {
+            if (!confirm(`サーバーID: ${serverId} を許可リストに追加しますか？`)) {
+                return;
+            }
+            
+            fetch('/admin/add_allowed_server', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({server_id: serverId})
+            })
+            .then(response => response.json())
+            .then(data => {
+                alert(data.message);
+                refreshStats();
+            })
+            .catch(error => {
+                alert('エラーが発生しました: ' + error);
+            });
+        }
+
+        function disallowServer(serverId) {
+            if (!confirm(`サーバーID: ${serverId} を許可リストから削除しますか？`)) {
+                return;
+            }
+            
+            fetch('/admin/remove_allowed_server', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({server_id: serverId})
+            })
+            .then(response => response.json())
+            .then(data => {
+                alert(data.message);
+                refreshStats();
+            })
+            .catch(error => {
+                alert('エラーが発生しました: ' + error);
+            });
+        }
+
+        // Load initial stats
+        refreshStats();
+        
+        // Auto-refresh every 30 seconds
+        setInterval(refreshStats, 30000);
+    </script>
+</body>
+</html>
+    '''
+
+from flask import request, jsonify, send_file
+import psutil
+import io
+
+# Server settings storage
+server_settings = {}
+
+def load_server_settings():
+    global server_settings
+    try:
+        if os.path.exists('server_settings.json'):
+            with open('server_settings.json', 'r', encoding='utf-8') as f:
+                server_settings = json.load(f)
+    except Exception as e:
+        print(f"Error loading server settings: {e}")
+        server_settings = {}
+
+def save_server_settings():
+    try:
+        with open('server_settings.json', 'w', encoding='utf-8') as f:
+            json.dump(server_settings, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"Error saving server settings: {e}")
+
+def get_server_settings(guild_id):
+    """Get settings for a specific server with defaults"""
+    default_settings = {
+        'spam_threshold': 3,
+        'time_window': 30,
+        'timeout_duration': 60,
+        'delete_messages': True,
+        'enable_antispam': True,
+        'bot_spam_threshold': 2,
+        'auto_ban_bots': False,
+        'enable_bot_protection': True,
+        'log_spam_detection': True,
+        'dm_notify_user': False,
+        'excluded_roles': [],
+        'excluded_channels': []
+    }
+    
+    guild_key = str(guild_id)
+    if guild_key not in server_settings:
+        server_settings[guild_key] = default_settings.copy()
+        save_server_settings()
+    
+    # Ensure all keys exist
+    for key, value in default_settings.items():
+        if key not in server_settings[guild_key]:
+            server_settings[guild_key][key] = value
+    
+    return server_settings[guild_key]
+
+@app.route('/admin/server_settings/<server_id>')
+def get_server_settings_api(server_id):
+    try:
+        settings = get_server_settings(int(server_id))
+        return jsonify(settings)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/admin/server_settings/<server_id>', methods=['POST'])
+def update_server_settings_api(server_id):
+    try:
+        request_data = request.json
+        guild_id = str(server_id)
+        
+        # Validate settings
+        if request_data.get('spam_threshold', 0) < 2:
+            return jsonify({'error': '連投検知閾値は2以上である必要があります'}), 400
+        
+        if request_data.get('time_window', 0) < 10:
+            return jsonify({'error': '時間窓は10秒以上である必要があります'}), 400
+        
+        server_settings[guild_id] = request_data
+        save_server_settings()
+        
+        # Get guild name for display
+        guild = bot.get_guild(int(server_id)) if bot else None
+        guild_name = guild.name if guild else f'サーバーID: {server_id}'
+        
+        return jsonify({'message': f'サーバー "{guild_name}" の設定を保存しました'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/admin/server_settings/<server_id>/reset', methods=['POST'])
+def reset_server_settings_api(server_id):
+    try:
+        guild_id = str(server_id)
+        if guild_id in server_settings:
+            del server_settings[guild_id]
+            save_server_settings()
+        
+        # Get guild name for display
+        guild = bot.get_guild(int(server_id)) if bot else None
+        guild_name = guild.name if guild else f'サーバーID: {server_id}'
+        
+        return jsonify({'message': f'サーバー "{guild_name}" の設定をデフォルトに戻しました'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# Admin API endpoints
+@app.route('/admin/stats')
+def admin_stats():
+    try:
+        # Calculate uptime
+        uptime_seconds = (datetime.now() - bot_start_time).total_seconds()
+        uptime_hours = int(uptime_seconds // 3600)
+        uptime_minutes = int((uptime_seconds % 3600) // 60)
+        uptime_str = f"{uptime_hours}時間 {uptime_minutes}分"
+        
+        # Load data safely
+        try:
+            data = load_data()
+        except Exception as e:
+            print(f"Error loading data: {e}")
+            data = {}
+        
+        # Calculate statistics safely
+        total_warnings = 0
+        warnings_this_month = 0
+        total_bans = 0
+        tickets_created = len(data.get('tickets', {}))
+        polls_created = len(data.get('polls', {}))
+        
+        try:
+            if 'warnings' in data:
+                for guild_warnings in data['warnings'].values():
+                    for user_warnings in guild_warnings.values():
+                        total_warnings += user_warnings.get('count', 0)
+                        for warning in user_warnings.get('history', []):
+                            try:
+                                warning_date = datetime.fromisoformat(warning['timestamp'])
+                                if warning_date.month == datetime.now().month and warning_date.year == datetime.now().year:
+                                    warnings_this_month += 1
+                            except:
+                                continue
+        except Exception as e:
+            print(f"Error calculating warnings: {e}")
+        
+        # Level statistics
+        level_ups = 0
+        try:
+            if 'user_levels' in data:
+                for guild_levels in data['user_levels'].values():
+                    for user_level in guild_levels.values():
+                        level_ups += user_level.get('level', 1) - 1
+        except Exception as e:
+            print(f"Error calculating level ups: {e}")
+        
+        # Get system info
+        memory_usage = 0
+        cpu_usage = 0
+        try:
+            import psutil
+            memory_usage = psutil.virtual_memory().used // 1024 // 1024  # MB
+            cpu_usage = psutil.cpu_percent()
+        except Exception as e:
+            print(f"Error getting system info: {e}")
+        
+        # Calculate real statistics safely
+        total_messages_today = 0
+        active_spam_detections = 0
+        try:
+            total_messages_today = sum(len(history) for history in user_message_history.values())
+            active_spam_detections = len([uid for uid, history in user_message_history.items() if history])
+        except Exception as e:
+            print(f"Error calculating message stats: {e}")
+        
+        # Calculate recent warnings safely
+        recent_warnings_list = []
+        try:
+            if 'warnings' in data and bot:
+                for guild_id, guild_warnings in data['warnings'].items():
+                    try:
+                        guild = bot.get_guild(int(guild_id))
+                        guild_name = guild.name if guild else f'Unknown Server ({guild_id})'
+                        
+                        for user_id, user_warnings in guild_warnings.items():
+                            if user_warnings.get('history'):
+                                try:
+                                    latest_warning = user_warnings['history'][-1]
+                                    user = None
+                                    if guild:
+                                        user = guild.get_member(int(user_id))
+                                    user_name = user.display_name if user else f'Unknown User ({user_id})'
+                                    
+                                    recent_warnings_list.append({
+                                        'user': user_name,
+                                        'server': guild_name,
+                                        'count': user_warnings['count'],
+                                        'last_warning': latest_warning['timestamp'][:10]
+                                    })
+                                except Exception as e:
+                                    print(f"Error processing warning for user {user_id}: {e}")
+                                    continue
+                    except Exception as e:
+                        print(f"Error processing guild {guild_id}: {e}")
+                        continue
+        except Exception as e:
+            print(f"Error calculating recent warnings: {e}")
+        
+        # Sort by timestamp and get last 5
+        try:
+            recent_warnings_list.sort(key=lambda x: x['last_warning'], reverse=True)
+            recent_warnings_list = recent_warnings_list[:5]
+        except Exception as e:
+            print(f"Error sorting warnings: {e}")
+            recent_warnings_list = []
+        
+        # Calculate server stats safely
+        server_count = 0
+        total_members = 0
+        latency = 0
+        active_timeouts = 0
+        roles_assigned = 0
+        top_servers = []
+        all_servers = []
+        
+        try:
+            if bot:
+                server_count = len(bot.guilds)
+                total_members = sum(guild.member_count for guild in bot.guilds)
+                latency = round(bot.latency * 1000)
+                
+                try:
+                    active_timeouts = sum(1 for guild in bot.guilds 
+                                         for member in guild.members 
+                                         if hasattr(member, 'timed_out_until') and member.timed_out_until and member.timed_out_until > datetime.now())
+                except Exception as e:
+                    print(f"Error calculating timeouts: {e}")
+                
+                try:
+                    roles_assigned = sum(len(member.roles) - 1 for guild in bot.guilds 
+                                        for member in guild.members)
+                except Exception as e:
+                    print(f"Error calculating roles: {e}")
+                
+                try:
+                    top_servers = [
+                        {'name': guild.name, 'members': guild.member_count, 'messages': 0, 'warnings': 0}
+                        for guild in bot.guilds[:5]
+                    ]
+                except Exception as e:
+                    print(f"Error calculating top servers: {e}")
+                
+                try:
+                    all_servers = [
+                        {
+                            'id': guild.id,
+                            'name': guild.name,
+                            'members': guild.member_count,
+                            'owner': guild.owner.display_name if guild.owner else 'Unknown',
+                            'created': guild.created_at.strftime('%Y/%m/%d') if guild.created_at else 'Unknown',
+                            'is_allowed': guild.id in ALLOWED_SERVERS,
+                            'bot_permissions': 'Admin' if guild.me.guild_permissions.administrator else 'Limited'
+                        }
+                        for guild in bot.guilds
+                    ]
+                except Exception as e:
+                    print(f"Error calculating all servers: {e}")
+        except Exception as e:
+            print(f"Error accessing bot guilds: {e}")
+        
+        stats = {
+            'server_count': server_count,
+            'allowed_servers': len(ALLOWED_SERVERS),
+            'total_members': total_members,
+            'uptime': uptime_str,
+            'monitored_users': len(user_message_history),
+            'tracked_bots': len(bot_message_count),
+            'spam_detections_today': active_spam_detections,
+            'total_spam_detections': sum(len(history) for history in user_message_history.values()),
+            'messages_today': total_messages_today,
+            'total_messages': sum(len(history) for history in user_message_history.values()),
+            'avg_messages_per_hour': total_messages_today // max(uptime_hours, 1) if uptime_hours > 0 else 0,
+            'latency': latency,
+            'total_warnings': total_warnings,
+            'warnings_this_month': warnings_this_month,
+            'total_bans': total_bans,
+            'active_timeouts': active_timeouts,
+            'tickets_created': tickets_created,
+            'polls_created': polls_created,
+            'level_ups': level_ups,
+            'roles_assigned': roles_assigned,
+            'memory_usage': memory_usage,
+            'cpu_usage': cpu_usage,
+            'last_restart': bot_start_time.strftime('%Y/%m/%d %H:%M:%S'),
+            'top_servers': top_servers,
+            'recent_warnings': recent_warnings_list,
+            'all_servers': all_servers
+        }
+        
+        return jsonify(stats)
+    except Exception as e:
+        print(f"Critical error in admin_stats: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'error': str(e),
+            'server_count': 0,
+            'allowed_servers': len(ALLOWED_SERVERS) if 'ALLOWED_SERVERS' in globals() else 0,
+            'total_members': 0,
+            'uptime': '0時間 0分',
+            'monitored_users': 0,
+            'tracked_bots': 0,
+            'spam_detections_today': 0,
+            'total_spam_detections': 0,
+            'messages_today': 0,
+            'total_messages': 0,
+            'avg_messages_per_hour': 0,
+            'latency': 0,
+            'total_warnings': 0,
+            'warnings_this_month': 0,
+            'total_bans': 0,
+            'active_timeouts': 0,
+            'tickets_created': 0,
+            'polls_created': 0,
+            'level_ups': 0,
+            'roles_assigned': 0,
+            'memory_usage': 0,
+            'cpu_usage': 0,
+            'last_restart': 'Unknown',
+            'top_servers': [],
+            'recent_warnings': [],
+            'all_servers': []
+        }), 500
+
+@app.route('/admin/update_spam_settings', methods=['POST'])
+def update_spam_settings():
+    try:
+        data = request.json
+        threshold = int(data.get('threshold', 3))
+        time_window = int(data.get('time_window', 30))
+        
+        # Here you would update the spam detection settings
+        # For now, we'll just return success
+        
+        return jsonify({'message': f'スパム設定を更新しました: 閾値={threshold}, 時間窓={time_window}秒'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/admin/update_user_warnings', methods=['POST'])
+def update_user_warnings():
+    try:
+        request_data = request.json
+        user_id = str(request_data.get('user_id'))
+        guild_id = str(request_data.get('guild_id'))
+        warn_count = int(request_data.get('warn_count', 0))
+        
+        data = load_data()
+        if 'warnings' not in data:
+            data['warnings'] = {}
+        
+        if guild_id not in data['warnings']:
+            data['warnings'][guild_id] = {}
+        
+        if user_id not in data['warnings'][guild_id]:
+            data['warnings'][guild_id][user_id] = {'count': 0, 'history': []}
+        
+        data['warnings'][guild_id][user_id]['count'] = warn_count
+        save_data(data)
+        
+        return jsonify({'message': f'ユーザー {user_id} の警告回数を {warn_count} に更新しました'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/admin/reset_user_level', methods=['POST'])
+def reset_user_level():
+    try:
+        request_data = request.json
+        user_id = str(request_data.get('user_id'))
+        guild_id = str(request_data.get('guild_id'))
+        
+        data = load_data()
+        if 'user_levels' not in data:
+            data['user_levels'] = {}
+        
+        if guild_id in data['user_levels'] and user_id in data['user_levels'][guild_id]:
+            data['user_levels'][guild_id][user_id] = {'level': 1, 'xp': 0, 'total_xp': 0}
+            save_data(data)
+            return jsonify({'message': f'ユーザー {user_id} のレベルをリセットしました'})
+        else:
+            return jsonify({'message': 'ユーザーのレベルデータが見つかりません'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/admin/add_allowed_server', methods=['POST'])
+def add_allowed_server():
+    try:
+        request_data = request.json
+        server_id = int(request_data.get('server_id'))
+        
+        if server_id not in ALLOWED_SERVERS:
+            ALLOWED_SERVERS.append(server_id)
+            # Get server name for display
+            guild = bot.get_guild(server_id) if bot else None
+            server_name = guild.name if guild else f'サーバーID: {server_id}'
+            return jsonify({'message': f'サーバー "{server_name}" を許可リストに追加しました'})
+        else:
+            guild = bot.get_guild(server_id) if bot else None
+            server_name = guild.name if guild else f'サーバーID: {server_id}'
+            return jsonify({'message': f'サーバー "{server_name}" は既に許可リストに含まれています'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/admin/remove_allowed_server', methods=['POST'])
+def remove_allowed_server():
+    try:
+        request_data = request.json
+        server_id = int(request_data.get('server_id'))
+        
+        if server_id in ALLOWED_SERVERS:
+            ALLOWED_SERVERS.remove(server_id)
+            # Get server name for display
+            guild = bot.get_guild(server_id) if bot else None
+            server_name = guild.name if guild else f'サーバーID: {server_id}'
+            return jsonify({'message': f'サーバー "{server_name}" を許可リストから削除しました'})
+        else:
+            guild = bot.get_guild(server_id) if bot else None
+            server_name = guild.name if guild else f'サーバーID: {server_id}'
+            return jsonify({'message': f'サーバー "{server_name}" は許可リストに含まれていません'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/admin/leave_server', methods=['POST'])
+def leave_server():
+    try:
+        request_data = request.json
+        server_id = int(request_data.get('server_id'))
+        
+        if bot:
+            guild = bot.get_guild(server_id)
+            if guild:
+                # Schedule the leave operation in the bot's event loop
+                import asyncio
+                
+                async def leave_guild():
+                    try:
+                        await guild.leave()
+                        print(f"Bot left server {server_id} ({guild.name}) via admin panel")
+                    except Exception as e:
+                        print(f"Error leaving server {server_id}: {e}")
+                
+                # Add the task to the bot's event loop
+                if hasattr(bot, 'loop') and bot.loop and bot.loop.is_running():
+                    asyncio.run_coroutine_threadsafe(leave_guild(), bot.loop)
+                
+                return jsonify({'message': f'サーバー "{guild.name}" からの退出を実行しました'})
+            else:
+                return jsonify({'message': 'サーバーが見つかりません'})
+        else:
+            return jsonify({'error': 'Botが利用できません'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/admin/clear_spam_data', methods=['POST'])
+def clear_spam_data():
+    try:
+        global user_message_history, bot_message_count
+        user_message_history.clear()
+        bot_message_count.clear()
+        return jsonify({'message': 'スパムデータをクリアしました'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/admin/export_data')
+def export_data():
+    try:
+        data = load_data()
+        export_data = {
+            'bot_data': data,
+            'spam_tracking': {
+                'user_message_history': len(user_message_history),
+                'bot_message_count': len(bot_message_count)
+            },
+            'allowed_servers': ALLOWED_SERVERS,
+            'export_timestamp': datetime.now().isoformat()
+        }
+        
+        # Create a BytesIO object to send as file
+        output = io.BytesIO()
+        output.write(json.dumps(export_data, ensure_ascii=False, indent=2).encode('utf-8'))
+        output.seek(0)
+        
+        return send_file(
+            output,
+            mimetype='application/json',
+            as_attachment=True,
+            download_name=f'bot_data_export_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json'
+        )
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 def run_flask():
     port = int(os.environ.get('PORT', 5000))
@@ -121,6 +1493,7 @@ async def on_ready():
     load_translation_config()
     load_server_log_config()
     load_meigen_config()
+    load_server_settings()
     
     # Restore persistent views
     await restore_persistent_views()
@@ -175,34 +1548,10 @@ async def on_message(message):
     user_id = message.author.id
     current_time = time.time()
 
+    # Bot message auto-deletion disabled
     if message.author.bot:
-        if user_id not in bot_message_count:
-            bot_message_count[user_id] = 0
-
-        bot_message_count[user_id] += 1
-
-        if bot_message_count[user_id] >= 2:
-            try:
-                await message.delete()
-                await message.guild.ban(message.author, reason="Bot spam detected - 2+ consecutive messages")
-
-                warning_embed = discord.Embed(
-                    title="🚫 Bot Ban",
-                    description=f"Bot {message.author.mention} has been banned for consecutive message spam.",
-                    color=0xff0000
-                )
-                await message.channel.send(embed=warning_embed, delete_after=10)
-
-                if user_id in bot_message_count:
-                    del bot_message_count[user_id]
-
-            except discord.Forbidden:
-                print(f"Failed to ban bot {message.author.name} - insufficient permissions")
-            except Exception as e:
-                print(f"Error banning bot: {e}")
-    else:
-        if user_id in bot_message_count:
-            del bot_message_count[user_id]
+        # Skip bot message processing
+        pass
 
     if not message.author.bot:
         if user_id not in user_message_history:
@@ -218,8 +1567,35 @@ async def on_message(message):
             if current_time - msg['timestamp'] <= 30
         ]
 
-        if len(user_message_history[user_id]) >= 3:
-            recent_messages = user_message_history[user_id][-3:]
+        # Get server-specific settings
+        guild_settings = get_server_settings(message.guild.id)
+        
+        # Check if anti-spam is enabled for this server
+        if not guild_settings.get('enable_antispam', True):
+            return
+        
+        # Check if user has excluded role
+        if guild_settings.get('excluded_roles'):
+            user_roles = [role.name for role in message.author.roles]
+            if any(role in user_roles for role in guild_settings['excluded_roles']):
+                return
+        
+        # Check if channel is excluded
+        if guild_settings.get('excluded_channels'):
+            if message.channel.name in guild_settings['excluded_channels']:
+                return
+        
+        spam_threshold = guild_settings.get('spam_threshold', 3)
+        time_window = guild_settings.get('time_window', 30)
+        
+        # Filter messages within time window
+        user_message_history[user_id] = [
+            msg for msg in user_message_history[user_id]
+            if current_time - msg['timestamp'] <= time_window
+        ]
+
+        if len(user_message_history[user_id]) >= spam_threshold:
+            recent_messages = user_message_history[user_id][-spam_threshold:]
             
             if (len(set(msg['content'] for msg in recent_messages)) == 1 and 
                 recent_messages[0]['content'].strip() != ""):
@@ -228,35 +1604,53 @@ async def on_message(message):
                     print(f"Identical message spam detected from {message.author.name} (ID: {user_id})")
                     print(f"Repeated message: {message.content[:50]}...")
 
-                    messages_to_delete = []
-                    async for msg in message.channel.history(limit=10):
-                        if (msg.author.id == user_id and 
-                            msg.content == message.content and
-                            current_time - msg.created_at.timestamp() <= 30):
-                            messages_to_delete.append(msg)
-                            if len(messages_to_delete) >= 3:
-                                break
-                    
-                    for msg in messages_to_delete[:3]:
-                        try:
-                            await msg.delete()
-                        except:
-                            pass
+                    # Delete messages if enabled
+                    if guild_settings.get('delete_messages', True):
+                        messages_to_delete = []
+                        async for msg in message.channel.history(limit=15):
+                            if (msg.author.id == user_id and 
+                                msg.content == message.content and
+                                current_time - msg.created_at.timestamp() <= time_window):
+                                messages_to_delete.append(msg)
+                                if len(messages_to_delete) >= spam_threshold:
+                                    break
+                        
+                        for msg in messages_to_delete[:spam_threshold]:
+                            try:
+                                await msg.delete()
+                            except:
+                                pass
 
-                    print(f"Deleted {min(len(messages_to_delete), 3)} consecutive identical messages")
+                        print(f"Deleted {min(len(messages_to_delete), spam_threshold)} consecutive identical messages")
 
+                    # Apply timeout
                     from datetime import timedelta
-                    timeout_duration = discord.utils.utcnow() + timedelta(hours=1)
+                    timeout_minutes = guild_settings.get('timeout_duration', 60)
+                    timeout_duration = discord.utils.utcnow() + timedelta(minutes=timeout_minutes)
                     await message.author.timeout(timeout_duration, reason="同じメッセージの連投によるスパム")
 
-                    print(f"Successfully timed out {message.author.name}")
+                    print(f"Successfully timed out {message.author.name} for {timeout_minutes} minutes")
 
-                    warning_embed = discord.Embed(
-                        title="🚫 タイムアウト適用",
-                        description=f"{message.author.mention} は同じメッセージの連投により1時間のタイムアウトが適用されました。",
-                        color=0xff0000
-                    )
-                    sent_warning = await message.channel.send(embed=warning_embed, delete_after=15)
+                    # Send warning if logging enabled
+                    if guild_settings.get('log_spam_detection', True):
+                        warning_embed = discord.Embed(
+                            title="🚫 スパム検知・タイムアウト適用",
+                            description=f"{message.author.mention} は同じメッセージの連投により{timeout_minutes}分のタイムアウトが適用されました。",
+                            color=0xff0000
+                        )
+                        sent_warning = await message.channel.send(embed=warning_embed, delete_after=15)
+
+                    # Send DM notification if enabled
+                    if guild_settings.get('dm_notify_user', False):
+                        try:
+                            dm_embed = discord.Embed(
+                                title=f"🚫 {message.guild.name}でスパム検知",
+                                description=f"連投によりタイムアウトが適用されました。\n\n**期間:** {timeout_minutes}分\n**理由:** 同じメッセージの連投",
+                                color=0xff0000
+                            )
+                            await message.author.send(embed=dm_embed)
+                        except:
+                            pass
 
                     user_message_history[user_id] = []
 
@@ -2852,6 +4246,75 @@ async def use_botlink_command(interaction: discord.Interaction, server_links: st
         except:
             pass
 
+@bot.tree.command(name='leave_bot', description='指定したサーバーからBotを退出させる')
+async def leave_bot_command(interaction: discord.Interaction, server_id: str):
+    try:
+        await interaction.response.defer()
+        
+        # Check if user is mume_dayo
+        if interaction.user.name != 'mume_dayo' and interaction.user.display_name != 'mume_dayo':
+            await interaction.followup.send('❌ このコマンドは mume_dayo のみが使用できます。', ephemeral=True)
+            return
+
+        # Validate server ID
+        try:
+            target_server_id = int(server_id)
+        except ValueError:
+            await interaction.followup.send('❌ 無効なサーバーIDです。数字のみを入力してください。', ephemeral=True)
+            return
+
+        # Get server info
+        target_guild = bot.get_guild(target_server_id)
+        if not target_guild:
+            await interaction.followup.send(f'❌ サーバーID {server_id} が見つかりません。Botがそのサーバーに参加していない可能性があります。', ephemeral=True)
+            return
+
+        guild_name = target_guild.name
+        guild_member_count = target_guild.member_count
+
+        # Leave the server
+        try:
+            await target_guild.leave()
+            
+            # Create success embed
+            embed = discord.Embed(
+                title='✅ サーバーから退出しました',
+                description=f'**サーバー:** {guild_name}\n**ID:** {server_id}\n\nBotが正常にサーバーから退出しました。',
+                color=0x00ff00
+            )
+            embed.add_field(
+                name='📊 退出したサーバー情報',
+                value=f'**メンバー数:** {guild_member_count}\n**退出日時:** <t:{int(datetime.now().timestamp())}:F>',
+                inline=False
+            )
+            embed.add_field(
+                name='🔄 現在の状況',
+                value=f'**現在の参加サーバー数:** {len(bot.guilds)}サーバー',
+                inline=False
+            )
+            embed.set_footer(text=f'実行者: {interaction.user.display_name}')
+
+            await interaction.followup.send(embed=embed, ephemeral=True)
+
+            # Log the action
+            print(f"Bot left server {server_id} ({guild_name}) by command from {interaction.user.display_name}")
+            print(f"Current server count: {len(bot.guilds)}")
+
+        except discord.Forbidden:
+            await interaction.followup.send('❌ サーバーから退出する権限がありません。', ephemeral=True)
+        except Exception as e:
+            await interaction.followup.send(f'❌ サーバーから退出中にエラーが発生しました: {str(e)}', ephemeral=True)
+
+    except Exception as e:
+        print(f"Error in leave_bot command: {e}")
+        try:
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f'❌ エラーが発生しました: {str(e)}', ephemeral=True)
+            else:
+                await interaction.followup.send(f'❌ エラーが発生しました: {str(e)}', ephemeral=True)
+        except:
+            pass
+
 # Support system
 class SupportResponseView(discord.ui.View):
     def __init__(self, request_user, request_content):
@@ -3486,6 +4949,11 @@ COMMAND_HELP.update({
         'description': 'サーバーリンク認証システムを設置',
         'usage': '/use_botlink <サーバーリンク>',
         'details': '指定されたサーバーのメンバーのみがBotの全機能を利用できる認証システムを設置します。サーバーリンクは「server_id1:invite_url1,server_id2:invite_url2」の形式で指定します。このコマンドはmume_dayoのみが使用できます。'
+    },
+    'leave_bot': {
+        'description': '指定したサーバーからBotを退出させる',
+        'usage': '/leave_bot <サーバーID>',
+        'details': '指定されたサーバーIDからBotを強制的に退出させます。サーバー情報と退出日時が記録され、現在の参加サーバー数も更新されます。このコマンドはmume_dayoのみが使用できます。'
     }
 })
 if __name__ == '__main__':
