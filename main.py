@@ -1494,9 +1494,31 @@ async def on_ready():
     load_server_log_config()
     load_meigen_config()
     load_server_settings()
+    load_scheduled_messages()
     
     # Restore persistent views
     await restore_persistent_views()
+    
+    # Restore scheduled message tasks
+    for task_key, message_data in scheduled_messages.items():
+        try:
+            guild_id, channel_id = task_key.split('_', 1)
+            guild = bot.get_guild(int(guild_id))
+            if guild:
+                channel = guild.get_channel(int(channel_id))
+                if channel:
+                    task = asyncio.create_task(send_scheduled_message(
+                        guild_id, 
+                        channel_id, 
+                        message_data['message'], 
+                        message_data['interval']
+                    ))
+                    scheduled_message_tasks[task_key] = task
+                    print(f"Restored scheduled message for {guild.name}#{channel.name}")
+        except Exception as e:
+            print(f"Error restoring scheduled message {task_key}: {e}")
+    
+    print(f"Restored {len(scheduled_message_tasks)} scheduled message tasks")
     
     for guild_id, config in meigen_channels.items():
         if guild_id not in meigen_tasks:
@@ -3166,6 +3188,272 @@ async def delete_messages(interaction: discord.Interaction, count: int, user: di
     except Exception as e:
         await interaction.followup.send(f'❌ メッセージの削除中にエラーが発生しました: {str(e)}', ephemeral=True)
 
+# Message scheduling system
+scheduled_message_tasks = {}  # {guild_id_channel_id: task}
+scheduled_messages = {}  # {guild_id_channel_id: {message, interval, channel_id}}
+
+def save_scheduled_messages():
+    """Save scheduled message configuration"""
+    try:
+        with open('scheduled_messages.json', 'w', encoding='utf-8') as f:
+            # Convert tasks to serializable format
+            serializable_data = {}
+            for key, data in scheduled_messages.items():
+                serializable_data[key] = {
+                    'message': data['message'],
+                    'interval': data['interval'],
+                    'channel_id': data['channel_id']
+                }
+            json.dump(serializable_data, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"Error saving scheduled messages: {e}")
+
+def load_scheduled_messages():
+    """Load scheduled message configuration"""
+    global scheduled_messages
+    try:
+        if os.path.exists('scheduled_messages.json'):
+            with open('scheduled_messages.json', 'r', encoding='utf-8') as f:
+                scheduled_messages = json.load(f)
+    except Exception as e:
+        print(f"Error loading scheduled messages: {e}")
+        scheduled_messages = {}
+
+async def send_scheduled_message(guild_id, channel_id, message_content, interval_seconds):
+    """Send scheduled message at specified intervals"""
+    while True:
+        await asyncio.sleep(interval_seconds)
+        
+        try:
+            guild = bot.get_guild(int(guild_id))
+            if not guild:
+                break
+                
+            channel = guild.get_channel(int(channel_id))
+            if not channel:
+                break
+            
+            await channel.send(message_content)
+            print(f"Sent scheduled message to {guild.name}#{channel.name}: {message_content[:50]}...")
+            
+        except Exception as e:
+            print(f"Error sending scheduled message: {e}")
+            break
+
+@bot.tree.command(name='setmessage', description='指定した時間間隔でメッセージを定期送信')
+async def setmessage_command(interaction: discord.Interaction, message: str, interval: str, everyone: str = "no"):
+    if not is_allowed_server(interaction.guild.id):
+        await interaction.response.send_message('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
+        return
+
+    if not interaction.user.guild_permissions.manage_messages:
+        await interaction.response.send_message('❌ メッセージ管理権限が必要です。', ephemeral=True)
+        return
+
+    # Validate everyone parameter
+    if everyone.lower() not in ['yes', 'no']:
+        await interaction.response.send_message('❌ everyoneパラメータは "yes" または "no" で指定してください。', ephemeral=True)
+        return
+
+    # Add @everyone mention if requested
+    if everyone.lower() == 'yes':
+        message = f"@everyone {message}"
+
+    # Parse interval (h:m:s format)
+    try:
+        time_parts = interval.split(':')
+        if len(time_parts) == 3:
+            hours = int(time_parts[0])
+            minutes = int(time_parts[1])
+            seconds = int(time_parts[2])
+        elif len(time_parts) == 2:
+            hours = 0
+            minutes = int(time_parts[0])
+            seconds = int(time_parts[1])
+        elif len(time_parts) == 1:
+            hours = 0
+            minutes = 0
+            seconds = int(time_parts[0])
+        else:
+            raise ValueError("Invalid format")
+        
+        total_seconds = hours * 3600 + minutes * 60 + seconds
+        
+        if total_seconds < 60:
+            await interaction.response.send_message('❌ 最小間隔は60秒です。', ephemeral=True)
+            return
+            
+    except ValueError:
+        await interaction.response.send_message('❌ 時間形式が正しくありません。例: 1:30:0 (1時間30分), 5:0 (5分), 30 (30秒)', ephemeral=True)
+        return
+
+    guild_id = str(interaction.guild.id)
+    channel_id = str(interaction.channel.id)
+    task_key = f"{guild_id}_{channel_id}"
+
+    # Stop existing task if any
+    if task_key in scheduled_message_tasks:
+        scheduled_message_tasks[task_key].cancel()
+
+    # Save message configuration
+    scheduled_messages[task_key] = {
+        'message': message,
+        'interval': total_seconds,
+        'channel_id': channel_id
+    }
+    save_scheduled_messages()
+
+    # Start new task
+    task = asyncio.create_task(send_scheduled_message(guild_id, channel_id, message, total_seconds))
+    scheduled_message_tasks[task_key] = task
+
+    # Format interval display
+    if total_seconds >= 3600:
+        if total_seconds % 3600 == 0:
+            interval_display = f"{total_seconds // 3600}時間"
+        else:
+            hours = total_seconds // 3600
+            remaining = total_seconds % 3600
+            if remaining % 60 == 0:
+                interval_display = f"{hours}時間{remaining // 60}分"
+            else:
+                interval_display = f"{hours}時間{remaining // 60}分{remaining % 60}秒"
+    elif total_seconds >= 60:
+        if total_seconds % 60 == 0:
+            interval_display = f"{total_seconds // 60}分"
+        else:
+            interval_display = f"{total_seconds // 60}分{total_seconds % 60}秒"
+    else:
+        interval_display = f"{total_seconds}秒"
+
+    embed = discord.Embed(
+        title='⏰ 定期メッセージ設定完了',
+        description=f'このチャンネル（{interaction.channel.mention}）に{interval_display}間隔でメッセージを送信します。',
+        color=0x00ff00
+    )
+    embed.add_field(
+        name='📝 送信メッセージ',
+        value=f'```{message}```',
+        inline=False
+    )
+    embed.add_field(
+        name='⏰ 送信間隔',
+        value=f'{interval_display}ごと',
+        inline=False
+    )
+    embed.add_field(
+        name='📢 @everyone通知',
+        value='有効' if everyone.lower() == 'yes' else '無効',
+        inline=False
+    )
+    embed.set_footer(text='停止するには /stopmessage を使用してください')
+
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name='stopmessage', description='定期メッセージ送信を停止')
+async def stopmessage_command(interaction: discord.Interaction):
+    if not is_allowed_server(interaction.guild.id):
+        await interaction.response.send_message('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
+        return
+
+    if not interaction.user.guild_permissions.manage_messages:
+        await interaction.response.send_message('❌ メッセージ管理権限が必要です。', ephemeral=True)
+        return
+
+    guild_id = str(interaction.guild.id)
+    channel_id = str(interaction.channel.id)
+    task_key = f"{guild_id}_{channel_id}"
+
+    if task_key not in scheduled_message_tasks:
+        await interaction.response.send_message('❌ このチャンネルで定期メッセージは設定されていません。', ephemeral=True)
+        return
+
+    # Stop the task
+    scheduled_message_tasks[task_key].cancel()
+    del scheduled_message_tasks[task_key]
+    
+    # Remove from configuration
+    if task_key in scheduled_messages:
+        del scheduled_messages[task_key]
+        save_scheduled_messages()
+
+    embed = discord.Embed(
+        title='✅ 定期メッセージ停止',
+        description='このチャンネルの定期メッセージ送信が停止されました。',
+        color=0x00ff00
+    )
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name='messagestatus', description='定期メッセージの設定状況を確認')
+async def messagestatus_command(interaction: discord.Interaction):
+    if not is_allowed_server(interaction.guild.id):
+        await interaction.response.send_message('❌ m.m.botを購入してください　https://discord.gg/5kwyPgd5fq', ephemeral=True)
+        return
+
+    guild_id = str(interaction.guild.id)
+    
+    # Find all scheduled messages for this guild
+    guild_messages = []
+    for task_key, message_data in scheduled_messages.items():
+        if task_key.startswith(f"{guild_id}_"):
+            channel_id = message_data['channel_id']
+            channel = interaction.guild.get_channel(int(channel_id))
+            if channel:
+                interval_seconds = message_data['interval']
+                
+                # Format interval display
+                if interval_seconds >= 3600:
+                    if interval_seconds % 3600 == 0:
+                        interval_display = f"{interval_seconds // 3600}時間"
+                    else:
+                        hours = interval_seconds // 3600
+                        remaining = interval_seconds % 3600
+                        if remaining % 60 == 0:
+                            interval_display = f"{hours}時間{remaining // 60}分"
+                        else:
+                            interval_display = f"{hours}時間{remaining // 60}分{remaining % 60}秒"
+                elif interval_seconds >= 60:
+                    if interval_seconds % 60 == 0:
+                        interval_display = f"{interval_seconds // 60}分"
+                    else:
+                        interval_display = f"{interval_seconds // 60}分{interval_seconds % 60}秒"
+                else:
+                    interval_display = f"{interval_seconds}秒"
+                
+                status = '🟢 稼働中' if task_key in scheduled_message_tasks else '🔴 停止中'
+                guild_messages.append({
+                    'channel': channel.mention,
+                    'message': message_data['message'],
+                    'interval': interval_display,
+                    'status': status
+                })
+
+    embed = discord.Embed(
+        title='📊 定期メッセージ設定状況',
+        color=0x0099ff
+    )
+
+    if guild_messages:
+        for i, msg_data in enumerate(guild_messages[:10], 1):  # Show max 10
+            embed.add_field(
+                name=f'#{i} {msg_data["channel"]}',
+                value=f'**メッセージ:** {msg_data["message"][:50]}{"..." if len(msg_data["message"]) > 50 else ""}\n'
+                      f'**間隔:** {msg_data["interval"]}\n'
+                      f'**状態:** {msg_data["status"]}',
+                inline=False
+            )
+        
+        if len(guild_messages) > 10:
+            embed.set_footer(text=f'表示: 10/{len(guild_messages)}件')
+    else:
+        embed.add_field(
+            name='🔴 定期メッセージ設定',
+            value='**状態:** なし\n設定するには `/setmessage <メッセージ> <時間間隔>` を使用してください。',
+            inline=False
+        )
+
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
 # Meigen channel setting command
 @bot.tree.command(name='meigen_channel_setting', description='名言を指定間隔で送信するチャンネルを設定')
 async def meigen_channel_setting(interaction: discord.Interaction, interval: str = "1h"):
@@ -3354,6 +3642,21 @@ COMMAND_HELP = {
         'description': '名言を指定間隔で送信するチャンネルを設定',
         'usage': '/meigen_channel_setting [間隔]',
         'details': '実行したチャンネルに指定した間隔で有名人の名言を送信するように設定します。間隔は30s（秒）、5m（分）、2h（時間）の形式で指定できます。省略時は1時間間隔です。最小間隔は60秒です。サーバー管理権限が必要です。'
+    },
+    'setmessage': {
+        'description': '指定した時間間隔でメッセージを定期送信',
+        'usage': '/setmessage <メッセージ> <時間間隔> [everyone]',
+        'details': '指定したメッセージを定期的に送信します。時間間隔は h:m:s 形式（例: 1:30:0=1時間30分、5:0=5分、30=30秒）で指定できます。everyoneパラメータを"yes"にすると@everyone通知が付きます。最小間隔は60秒です。メッセージ管理権限が必要です。'
+    },
+    'stopmessage': {
+        'description': '定期メッセージ送信を停止',
+        'usage': '/stopmessage',
+        'details': '現在のチャンネルで設定されている定期メッセージ送信を停止します。メッセージ管理権限が必要です。'
+    },
+    'messagestatus': {
+        'description': '定期メッセージの設定状況を確認',
+        'usage': '/messagestatus',
+        'details': 'サーバー内の定期メッセージ設定状況を確認します。各チャンネルの設定内容、送信間隔、稼働状況を表示します。'
     },
     'timenuke': {
         'description': '指定した時間間隔でチャンネルを定期的にnuke',
