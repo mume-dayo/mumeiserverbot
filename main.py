@@ -53,6 +53,60 @@ def save_data(data):
     with open(DATA_FILE, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
+# Persistent views storage
+persistent_views = {}
+
+def save_persistent_views():
+    """Save persistent view data"""
+    try:
+        with open('persistent_views.json', 'w', encoding='utf-8') as f:
+            json.dump(persistent_views, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"Error saving persistent views: {e}")
+
+def load_persistent_views():
+    """Load persistent view data"""
+    global persistent_views
+    try:
+        if os.path.exists('persistent_views.json'):
+            with open('persistent_views.json', 'r', encoding='utf-8') as f:
+                persistent_views = json.load(f)
+    except Exception as e:
+        print(f"Error loading persistent views: {e}")
+        persistent_views = {}
+
+async def restore_persistent_views():
+    """Restore persistent views after bot restart"""
+    load_persistent_views()
+    
+    # Restore ticket panel views
+    for view_id, view_data in persistent_views.items():
+        try:
+            if view_data['type'] == 'ticket_panel':
+                view = TicketPanelView(view_data.get('category_name'))
+                bot.add_view(view)
+                print(f"Restored TicketPanelView: {view_id}")
+            elif view_data['type'] == 'ticket_close':
+                view = TicketCloseView(view_data['ticket_id'])
+                bot.add_view(view)
+                print(f"Restored TicketCloseView for ticket {view_data['ticket_id']}")
+            elif view_data['type'] == 'public_auth':
+                view = PublicAuthView()
+                bot.add_view(view)
+                print(f"Restored PublicAuthView: {view_id}")
+            elif view_data['type'] == 'specific_role':
+                guild = bot.get_guild(int(view_data['guild_id']))
+                if guild:
+                    role = guild.get_role(int(view_data['role_id']))
+                    if role:
+                        view = SpecificRoleView(role)
+                        bot.add_view(view)
+                        print(f"Restored SpecificRoleView for role {role.name}")
+        except Exception as e:
+            print(f"Error restoring view {view_id}: {e}")
+    
+    print(f"Restored {len(persistent_views)} persistent views")
+
 def is_allowed_server(guild_id):
     return guild_id in ALLOWED_SERVERS
 
@@ -67,6 +121,9 @@ async def on_ready():
     load_translation_config()
     load_server_log_config()
     load_meigen_config()
+    
+    # Restore persistent views
+    await restore_persistent_views()
     
     for guild_id, config in meigen_channels.items():
         if guild_id not in meigen_tasks:
@@ -268,7 +325,7 @@ class SpecificRoleView(discord.ui.View):
         super().__init__(timeout=None)
         self.role = role
 
-    @discord.ui.button(label='ろーるをしゅとく！', style=discord.ButtonStyle.primary)
+    @discord.ui.button(label='ろーるをしゅとく！', style=discord.ButtonStyle.primary, custom_id='specific_role_button')
     async def get_role_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         data = load_data()
         user_id = str(interaction.user.id)
@@ -300,7 +357,7 @@ class PublicAuthView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label='認証する', style=discord.ButtonStyle.primary)
+    @discord.ui.button(label='認証する', style=discord.ButtonStyle.primary, custom_id='public_auth_button')
     async def authenticate_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         data = load_data()
         user_id = str(interaction.user.id)
@@ -470,7 +527,17 @@ async def setup_role(interaction: discord.Interaction, role_name: str = None):
             embed.set_footer(text='認証は無料です | 24時間利用可能')
 
             view = SpecificRoleView(role)
-            await interaction.followup.send(embed=embed, view=view)
+            message = await interaction.followup.send(embed=embed, view=view)
+            
+            # Save persistent view data
+            persistent_views[f"specific_role_{message.id}"] = {
+                'type': 'specific_role',
+                'role_id': str(role.id),
+                'guild_id': str(interaction.guild.id),
+                'channel_id': str(interaction.channel.id),
+                'message_id': str(message.id)
+            }
+            save_persistent_views()
         else:
             embed = discord.Embed(
                 title='🎭 ロール取得システム',
@@ -484,7 +551,16 @@ async def setup_role(interaction: discord.Interaction, role_name: str = None):
             embed.set_footer(text='認証は無料です | 24時間利用可能')
 
             view = PublicAuthView()
-            await interaction.followup.send(embed=embed, view=view)
+            message = await interaction.followup.send(embed=embed, view=view)
+            
+            # Save persistent view data
+            persistent_views[f"public_auth_{message.id}"] = {
+                'type': 'public_auth',
+                'guild_id': str(interaction.guild.id),
+                'channel_id': str(interaction.channel.id),
+                'message_id': str(message.id)
+            }
+            save_persistent_views()
     except Exception as e:
         print(f"Error in setuprole command: {e}")
         try:
@@ -1093,7 +1169,7 @@ class TicketCloseView(discord.ui.View):
         super().__init__(timeout=None)
         self.ticket_id = ticket_id
 
-    @discord.ui.button(label='🔒 チケットを閉じる', style=discord.ButtonStyle.danger, emoji='🔒')
+    @discord.ui.button(label='🔒 チケットを閉じる', style=discord.ButtonStyle.danger, emoji='🔒', custom_id='close_ticket_button')
     async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
         data = load_data()
         tickets = data.get('tickets', {})
@@ -1132,6 +1208,12 @@ class TicketCloseView(discord.ui.View):
         
         await interaction.response.send_message(embed=embed)
         
+        # Clean up persistent view data
+        view_key = f"ticket_close_{self.ticket_id}"
+        if view_key in persistent_views:
+            del persistent_views[view_key]
+            save_persistent_views()
+        
         # Delete channel after 5 seconds
         import asyncio
         await asyncio.sleep(5)
@@ -1145,7 +1227,7 @@ class TicketPanelView(discord.ui.View):
         super().__init__(timeout=None)
         self.category_name = category_name
 
-    @discord.ui.button(label='🎫 チケット作成', style=discord.ButtonStyle.primary, emoji='🎫')
+    @discord.ui.button(label='🎫 チケット作成', style=discord.ButtonStyle.primary, emoji='🎫', custom_id='create_ticket_button')
     async def create_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.create_ticket_channel(interaction)
     
@@ -1210,6 +1292,16 @@ class TicketPanelView(discord.ui.View):
             close_view = TicketCloseView(ticket_id)
             message = await channel.send(embed=embed, view=close_view)
             await message.pin()
+            
+            # Save persistent view data
+            persistent_views[f"ticket_close_{ticket_id}"] = {
+                'type': 'ticket_close',
+                'ticket_id': ticket_id,
+                'guild_id': guild_id,
+                'channel_id': str(channel.id),
+                'message_id': str(message.id)
+            }
+            save_persistent_views()
             await channel.send(f"{interaction.user.mention} へのメンション", delete_after=1)
 
             # Save ticket data
@@ -1266,7 +1358,17 @@ async def ticket_panel(interaction: discord.Interaction, category_name: str = No
         embed.set_footer(text='24時間サポート | お気軽にお声がけください')
 
         view = TicketPanelView(category_name)
-        await interaction.followup.send(embed=embed, view=view)
+        message = await interaction.followup.send(embed=embed, view=view)
+        
+        # Save persistent view data
+        persistent_views[f"ticket_panel_{message.id}"] = {
+            'type': 'ticket_panel',
+            'category_name': category_name,
+            'guild_id': str(interaction.guild.id),
+            'channel_id': str(interaction.channel.id),
+            'message_id': str(message.id)
+        }
+        save_persistent_views()
     except Exception as e:
         print(f"Error in ticket-panel command: {e}")
         try:
