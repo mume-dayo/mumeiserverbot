@@ -15,25 +15,33 @@ app = Flask(__name__)
 def initialize_firebase():
     if not firebase_admin._apps:
         try:
-            # Firebaseプロジェクト設定をハードコード
+            # 環境変数からFirebase設定を取得
             firebase_config = {
                 "type": "service_account",
-                "project_id": "mumeiserverbot",
-                "private_key_id": "342f281fe868a2a52d8454404b51969371620897",
-                "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDTt7wzGLv28i4P\nPcH5u2WZlrWaXu7xB2xLgMsjZ74B+4uP8+H3aXDoaEiKMJd6XAWU+qqRav54Q3UX\nRVFTx9I0yIKZCyXNvumZRx3IYmnMbhBKB908sqaIxtPgkCVq3MiObnSMq8oY/C3h\nK5Q1xXBsqu259ONT/egev57mzZNZFlkQWfTjsr8nq4Hb5yaek7XeH70s9yqBimp8\nLXBlpVxpeZ8YiHM13BlMXfW9abtehwYZVHp7ZZ+mvlX2/LQ/pQEUKgnCci1L6wix\nw5snNSbxlb1LEVIMzmxua3X8CcokNbIW6VMJUSUv+4PtgztojjzA4fUIG6JFF9+u\ncgiTi/GTAgMBAAECggEAMK3Lt2HmAfMQFRAJlB56z1QgIETYopGm3DtaOaNGRFVu\ncuRL3eOgAsfLef6PLaKP4/+4jSPxK3yzJO0atG06z0kVAhRWllZhho0b83FxSwA5\nfZQOUcDv2n4AxF7QQ6BM+ra51IhBOPpuoBmxg6WIYmvwqfN8+1hjcQJ1CjNVQEOg\nSaY9EF//7du+hVBrPPmwBq/zi1Spx8yoj2/ZAEZlUoGU/6672nBpL6pEesyvagf3\n++0dE1J97VjdtU1QSS5uA10sZECuJTNjEWExMZ4mvV+0JaWJLGXmrGxOIof2HvVF\n50z2FpDTFe8MOPrJd4KtXDh+Lcv5bQo8HytNDVcm5QKBgQD7cnHx7vJh/WiCH6UI\np3letLyD/n3T7JjNg6CXgXicVWK1910Lx3t7Xr2yW3wtiwhwlFKpTqtoroAUa6Ot\nkIk9OTC+MHN8OvNldFrgzYI9quCA3Ta4vn72XIjR+vlsivlWTE6j5eDFXsK1d8wD\n59JwJgMc3VFalh5BJ0TO9LtVbwKBgQDXjSEOqNwv1zL69eC1kbJBv8IjLzNzpGwB\nQX6PermufOnsaZcOA8IHufi0ty9S2EmRwh172R97f3Z6/6ERG14jWsEIEL/MwIPV\n42eujgCc/H36jElnmv9zLRxVpz2yyq0BzIsU4ImVYSSE1CQO61z1upDs+U6NoJdR\nUqF4GGb8HQKBgQCOaFHKYLcb8kZHNB7m2NrvXVNLOk4PQXeFJaBFTkl92QoP3unu\nqurvg0fShOe+b3i3Mfni87A2mGXnqtLHkQ15BDPr80rkuApzkkOKADpcLLP7p82/\nMfx8EQpYSlkLNWZjjtIXFzGG9tU1q4R7TccsRwsKRPo3YL//zHq273pNtwKBgHYD\nPasSBmNm9fFyttGR8D+RJlAvIoNY7Q0O96TEc2610zjtYpd4tT2XszP160H3Sugz\nmALbkCIEWjDjTiLYkgTXRkINMYV/jW6IL5bhBjLtBmgrcHD56ov7kbzPcLc3wdrv\nSuJmQM15Pw4+O3OzptSejYRAxqJB3zbV/7OJ4LB9AoGALOOqmYkU/QbxvPNkygfq\nmG8aVC0/TfcGmyj3isMfni4aDBdhW2y5hmoCO72Cs5pGtTC7XYtV+SV+PZPREdsJ\nQYIT3YAorJoltRixV6gZaVEc4uVyu3mLa5xtjYqUvZ05u6Dmvn3hfNBuElZg/FCu\nByUu049uJv319WgTR8Ew+PQ=\n-----END PRIVATE KEY-----\n",
-                "client_email": "firebase-adminsdk-fbsvc@mumeiserverbot.iam.gserviceaccount.com",
-                "client_id": "103058932410668247302",
+                "project_id": os.getenv('FIREBASE_PROJECT_ID', 'mumeiserverbot'),
+                "private_key_id": os.getenv('FIREBASE_PRIVATE_KEY_ID'),
+                "private_key": os.getenv('FIREBASE_PRIVATE_KEY', '').replace('\\n', '\n'),
+                "client_email": os.getenv('FIREBASE_CLIENT_EMAIL'),
+                "client_id": os.getenv('FIREBASE_CLIENT_ID'),
                 "auth_uri": "https://accounts.google.com/o/oauth2/auth",
                 "token_uri": "https://oauth2.googleapis.com/token",
                 "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-                "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-fbsvc%40mumeiserverbot.iam.gserviceaccount.com",
+                "client_x509_cert_url": os.getenv('FIREBASE_CLIENT_CERT_URL'),
                 "universe_domain": "googleapis.com"
             }
+            
+            # 必須環境変数のチェック
+            required_env_vars = ['FIREBASE_PRIVATE_KEY_ID', 'FIREBASE_PRIVATE_KEY', 'FIREBASE_CLIENT_EMAIL', 'FIREBASE_CLIENT_ID']
+            missing_vars = [var for var in required_env_vars if not os.getenv(var)]
+            
+            if missing_vars:
+                print(f"Firebase初期化エラー: 以下の環境変数が設定されていません: {', '.join(missing_vars)}")
+                return None
             
             # Firebase Admin SDK用の設定として初期化
             cred = credentials.Certificate(firebase_config)
             firebase_admin.initialize_app(cred, {
-                'storageBucket': 'mumeiserverbot.firebasestorage.app'
+                'storageBucket': os.getenv('FIREBASE_STORAGE_BUCKET', 'mumeiserverbot.firebasestorage.app')
             })
             print("Firebase初期化成功")
             return firestore.client()
@@ -3279,8 +3287,8 @@ async def setmessage_command(interaction: discord.Interaction, message: str, int
         
         total_seconds = hours * 3600 + minutes * 60 + seconds
         
-        if total_seconds < 60:
-            await interaction.response.send_message('❌ 最小間隔は60秒です。', ephemeral=True)
+        if total_seconds < 1:
+            await interaction.response.send_message('❌ 最小間隔は1秒です。', ephemeral=True)
             return
             
     except ValueError:
@@ -3469,13 +3477,13 @@ async def meigen_channel_setting(interaction: discord.Interaction, interval: str
     try:
         if interval.endswith('s'):
             seconds = int(interval[:-1])
-            if seconds < 60:
-                await interaction.response.send_message('❌ 最小間隔は60秒です。', ephemeral=True)
+            if seconds < 1:
+                await interaction.response.send_message('❌ 最小間隔は1秒です。', ephemeral=True)
                 return
         elif interval.endswith('m'):
             seconds = int(interval[:-1]) * 60
-            if seconds < 60:
-                await interaction.response.send_message('❌ 最小間隔は1分です。', ephemeral=True)
+            if seconds < 1:
+                await interaction.response.send_message('❌ 最小間隔は1秒です。', ephemeral=True)
                 return
         elif interval.endswith('h'):
             seconds = int(interval[:-1]) * 3600
@@ -3641,12 +3649,12 @@ COMMAND_HELP = {
     'meigen_channel_setting': {
         'description': '名言を指定間隔で送信するチャンネルを設定',
         'usage': '/meigen_channel_setting [間隔]',
-        'details': '実行したチャンネルに指定した間隔で有名人の名言を送信するように設定します。間隔は30s（秒）、5m（分）、2h（時間）の形式で指定できます。省略時は1時間間隔です。最小間隔は60秒です。サーバー管理権限が必要です。'
+        'details': '実行したチャンネルに指定した間隔で有名人の名言を送信するように設定します。間隔は1s（秒）、5m（分）、2h（時間）の形式で指定できます。省略時は1時間間隔です。最小間隔は1秒です。サーバー管理権限が必要です。'
     },
     'setmessage': {
         'description': '指定した時間間隔でメッセージを定期送信',
         'usage': '/setmessage <メッセージ> <時間間隔> [everyone]',
-        'details': '指定したメッセージを定期的に送信します。時間間隔は h:m:s 形式（例: 1:30:0=1時間30分、5:0=5分、30=30秒）で指定できます。everyoneパラメータを"yes"にすると@everyone通知が付きます。最小間隔は60秒です。メッセージ管理権限が必要です。'
+        'details': '指定したメッセージを定期的に送信します。時間間隔は h:m:s 形式（例: 1:30:0=1時間30分、5:0=5分、30=30秒）で指定できます。everyoneパラメータを"yes"にすると@everyone通知が付きます。最小間隔は1秒です。メッセージ管理権限が必要です。'
     },
     'stopmessage': {
         'description': '定期メッセージ送信を停止',
