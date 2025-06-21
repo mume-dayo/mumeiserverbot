@@ -4783,7 +4783,7 @@ async def allmessage_command(interaction: discord.Interaction, target_server_id:
                         copied_messages += 1
                         channel_messages += 1
                         
-                        if copied_messages % 100 == 0 and status_message:
+                        if copied_messages % 500 == 0 and status_message:
                             try:
                                 status_embed.clear_fields()
                                 status_embed.add_field(
