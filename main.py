@@ -6,53 +6,10 @@ from datetime import datetime
 from flask import Flask
 from threading import Thread
 import time
-import firebase_admin
-from firebase_admin import credentials, firestore
-
 app = Flask(__name__)
 
-# Firebase初期化
-def initialize_firebase():
-    if not firebase_admin._apps:
-        try:
-            # 環境変数からFirebase設定を取得
-            firebase_config = {
-                "type": "service_account",
-                "project_id": os.getenv('FIREBASE_PROJECT_ID', 'mumeiserverbot'),
-                "private_key_id": os.getenv('FIREBASE_PRIVATE_KEY_ID'),
-                "private_key": os.getenv('FIREBASE_PRIVATE_KEY', '').replace('\\n', '\n'),
-                "client_email": os.getenv('FIREBASE_CLIENT_EMAIL'),
-                "client_id": os.getenv('FIREBASE_CLIENT_ID'),
-                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                "token_uri": "https://oauth2.googleapis.com/token",
-                "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-                "client_x509_cert_url": os.getenv('FIREBASE_CLIENT_CERT_URL'),
-                "universe_domain": "googleapis.com"
-            }
-            
-            # 必須環境変数のチェック
-            required_env_vars = ['FIREBASE_PRIVATE_KEY_ID', 'FIREBASE_PRIVATE_KEY', 'FIREBASE_CLIENT_EMAIL', 'FIREBASE_CLIENT_ID']
-            missing_vars = [var for var in required_env_vars if not os.getenv(var)]
-            
-            if missing_vars:
-                print(f"Firebase初期化エラー: 以下の環境変数が設定されていません: {', '.join(missing_vars)}")
-                return None
-            
-            # Firebase Admin SDK用の設定として初期化
-            cred = credentials.Certificate(firebase_config)
-            firebase_admin.initialize_app(cred, {
-                'storageBucket': os.getenv('FIREBASE_STORAGE_BUCKET', 'mumeiserverbot.firebasestorage.app')
-            })
-            print("Firebase初期化成功")
-            return firestore.client()
-        except Exception as e:
-            print(f"Firebase初期化エラー: {e}")
-            return None
-    else:
-        return firestore.client()
-
-# Firebase初期化
-db = initialize_firebase()
+# Firebase関連のコードを削除し、ローカルファイルベースのデータストレージを使用
+db = None  # Firebaseは使用しません
 
 @app.route('/')
 def home():
